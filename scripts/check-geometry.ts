@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import { recognizeShape } from '../src/auto-shape';
+import { Renderer } from '../src/render';
+import { Item, Point, stroke } from '../src/model';
+import { eraseStroke, splitErasedStroke } from '../src/erase';
+import { difference, intersection, union, Pair } from 'polygon-clipping';
+import { extendLaserTrail } from '../src/laser';
+const path=(vertices:number[][]):Point[]=>vertices.slice(1).flatMap((b,i)=>Array.from({length:30},(_,j)=>[vertices[i][0]+(b[0]-vertices[i][0])*j/30,vertices[i][1]+(b[1]-vertices[i][1])*j/30,.5] as Point)).concat([[vertices.at(-1)![0],vertices.at(-1)![1],.5]]);
+const rect=path([[20,20],[220,20],[220,120],[20,120],[20,20]]);
+const cases:[string,Point[],string|null][]=[['rectangle',rect,'rectangle'],['rough rectangle',rect.map((p,i)=>[p[0]+Math.sin(i*2)*2,p[1]+Math.cos(i*3)*2,.5]),'rectangle'],['rotated rectangle',rect.map(p=>[p[0]*.866-p[1]*.5,p[0]*.5+p[1]*.866,.5]),'rectangle'],['thin rectangle',path([[20,20],[320,20],[320,40],[20,40],[20,20]]),'rectangle'],['gap rectangle',rect.slice(0,-4),'rectangle'],['triangle',path([[100,20],[200,200],[20,200],[100,20]]),'triangle'],['line',path([[20,20],[300,40]]),'line'],['open U',path([[20,20],[20,200],[200,200],[200,20]]),null],['scribble',path([[20,20],[220,120],[20,120],[220,20],[20,20]]),null]];
+for(const ratio of[1,2])cases.push([ratio===1?'circle':'ellipse',Array.from({length:121},(_,i)=>[150+100*Math.cos(i*Math.PI/60),150+100/ratio*Math.sin(i*Math.PI/60),.5]),'ellipse']);
+const start=performance.now();for(const[name,points,expected]of cases){const result=recognizeShape(points,'#000',3);assert.equal(result?.shape??null,expected,name);console.log(name,'passed');}console.log('recognition average ms',(performance.now()-start)/cases.length);
+const renderer=new Renderer(),original=stroke([[20,20,.5],[220,20,.5]],'#000',12,'ballpoint'),outline=renderer.strokeOutline(original),ink=union([outline.map(p=>p as Pair)]);
+const points=structuredClone(original.points);assert.equal(eraseStroke(original,[100,20,.5],10,false,false,outline),false);assert.deepEqual(original.points,points);
+assert(original.frozenInk?.length);assert.equal(original.eraseMasks,undefined);const remaining=union(...original.frozenInk.map(ring=>[ring]));assert.equal(intersection(remaining,[[[70,0],[90,0],[90,40],[70,40]]]).length,1);assert.equal(intersection(remaining,[[[99,19],[101,19],[101,21],[99,21]]]).length,0);
+const once=JSON.stringify(original.frozenInk);eraseStroke(original,[100,20,.5],10,false,false,outline);assert.equal(JSON.stringify(original.frozenInk),once);
+const segmented=stroke([[20,20,.5],[220,20,.5]],'#000',12,'ballpoint');eraseStroke(segmented,[100,20,.5],8,true,false,renderer.strokeOutline(segmented));assert(segmented.frozenInk?.length);assert.equal(segmented.eraseMasks,undefined);assert.deepEqual(segmented.points,points);
+console.log('fine and segmented eraser, preserved centerline, repeated cut passed');
+const visibleWorld=(o:Item)=>difference(o.frozenInk?union(...o.frozenInk.map(ring=>[ring])):union([renderer.strokeOutline(o).map(p=>p as Pair)]),o.eraseMasks??[]).map(polygon=>polygon.map(ring=>ring.map(p=>{const a=o.rotation*Math.PI/180,dx=p[0]*o.w/o.bw-o.w/2,dy=p[1]*o.h/o.bh-o.h/2;return[o.x+o.w/2+dx*Math.cos(a)-dy*Math.sin(a),o.y+o.h/2+dx*Math.sin(a)+dy*Math.cos(a)] as Pair;})));
+const area=(polygons:Pair[][][])=>polygons.reduce((sum,p)=>sum+p.reduce((total,ring,i)=>total+(i?-1:1)*Math.abs(ring.reduce((s,a,j)=>{const b=ring[(j+1)%ring.length];return s+a[0]*b[1]-b[0]*a[1];},0))/2,0),0);
+for(const rotation of[0,37]){const cut=structuredClone(original);cut.rotation=rotation;cut.w*=1.3;cut.h*=.8;const before=visibleWorld(cut),parts=splitErasedStroke(cut,renderer.strokeOutline(cut));assert.equal(parts.length,2);assert.notEqual(parts[0].id,parts[1].id);assert(parts.every(p=>p.bw<cut.bw));const after=parts.flatMap(visibleWorld);assert(Math.abs(area(before)-area(after))<1e-5);const vertices=after.flat(2);for(const p of before.flat(2))assert(vertices.some(q=>Math.hypot(q[0]-p[0],q[1]-p[1])<1e-6));}
+console.log('disconnected remnants split into independently bounded objects, preserving rotated/scaled geometry');
+const surface={},first=extendLaserTrail(undefined,surface,[0,0,.5],true,false,0);first.releasedAt=100;
+const second=extendLaserTrail(first,surface,[20,20,.5],true,false,999);assert.equal(second,first);assert.equal(second.releasedAt,undefined);assert.equal(second.points.length,2);assert(second.points[1].start);
+second.releasedAt=1100;const expired=extendLaserTrail(second,surface,[40,40,.5],true,false,2100);assert.notEqual(expired,second);assert.equal(expired.points.length,1);
+console.log('laser re-press before expiry retains old trail; expired trail clears; strokes stay separate passed');

@@ -1,0 +1,42 @@
+{
+  "name": "obsidian-penbook",
+  "version": "0.1.0",
+  "license": "MIT",
+  "description": "A Goodnotes-inspired handwriting experience for Obsidian, independently implemented from scratch.",
+  "author": "Penbook contributors",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wangcccccct/penbook.git"
+  },
+  "homepage": "https://github.com/wangcccccct/penbook#readme",
+  "bugs": {
+    "url": "https://github.com/wangcccccct/penbook/issues"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "handwriting",
+    "penbook",
+    "pdf-annotation"
+  ],
+  "scripts": {
+    "build": "tsc --noEmit && node build.mjs",
+    "dev": "node build.mjs --watch"
+  },
+  "dependencies": {
+    "@phosphor-icons/core": "^2.1.1",
+    "clipper-lib": "^6.4.2",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^6.4.299",
+    "perfect-freehand": "^1.2.2",
+    "polygon-clipping": "^0.15.7"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^0.1.100",
+    "@types/clipper-lib": "^6.4.0",
+    "@types/node": "^24.0.0",
+    "esbuild": "^0.25.0",
+    "obsidian": "latest",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "id": "penbook",
+  "name": "Penbook 手写笔记",
+  "version": "0.1.0",
+  "minAppVersion": "1.6.0",
+  "description": "本地手写笔记本、S Pen 压感书写、PDF 批注、页面管理与导入导出。",
+  "author": "Penbook",
+  "isDesktopOnly": false
+}

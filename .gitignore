@@ -1,0 +1,13 @@
+node_modules/
+release/
+.DS_Store
+
+# Local user notebooks and credentials
+*.penbook
+.env
+.env.*
+
+# Local design references
+Goodnotes screenshot/
+SCREENSHOT-DESIGN.md
+scripts/contact-sheet.py
