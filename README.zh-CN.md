@@ -81,3 +81,5 @@ npm run package
 ## 许可证
 
 Penbook 使用 [MIT 许可证](LICENSE)。第三方组件仍遵循各自的许可证，详见 [第三方许可说明](THIRD_PARTY_NOTICES.md)。
+
+感谢 [Linux.do 社区](https://linux.do) 的支持。
