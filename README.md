@@ -12,6 +12,17 @@ The interface follows Obsidian theme variables and adapts to light and dark them
 
 The toolbar has two rows: primary tools above and a rounded settings bar for the current tool below. Both rows support touch swipes, horizontal trackpad scrolling, and the mouse wheel. The toolbar includes pen styles, three preset widths, custom width, current and recent colors, page navigation, search, selection, drawing, PDF annotation, export, and page options.
 
+## Screenshots
+
+<p align="center">
+  <img src="screenshots/01-writing-canvas.png" alt="Penbook writing canvas" width="49%" />
+  <img src="screenshots/02-page-thumbnails.png" alt="Penbook page thumbnails" width="49%" />
+</p>
+<p align="center">
+  <img src="screenshots/03-sticky-note.png" alt="Penbook sticky note" width="49%" />
+  <img src="screenshots/04-object-selection.png" alt="Penbook object selection" width="49%" />
+</p>
+
 ## Getting started
 
 - Enable **Penbook** under Obsidian Settings → Community plugins.

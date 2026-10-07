@@ -12,6 +12,17 @@ Penbook 是一款面向 Obsidian 桌面版和 Android 平板的本地手写笔�
 
 工具栏分为两层：上层放置主要工具，下层显示当前工具的圆角设置栏。两层都支持触控滑动、触控板横向滚动和鼠标滚轮。工具栏包含笔型、三档预设笔宽、自定义笔宽、当前颜色和常用颜色，以及页面导航、搜索、选择、书写、PDF 批注、导出和页面选项。
 
+## 截图
+
+<p align="center">
+  <img src="screenshots/01-writing-canvas.png" alt="Penbook 手写画布" width="49%" />
+  <img src="screenshots/02-page-thumbnails.png" alt="Penbook 页面缩略图" width="49%" />
+</p>
+<p align="center">
+  <img src="screenshots/03-sticky-note.png" alt="Penbook 便签" width="49%" />
+  <img src="screenshots/04-object-selection.png" alt="Penbook 对象选择" width="49%" />
+</p>
+
 ## 开始使用
 
 - 在 Obsidian 设置 → 第三方插件中启用 **Penbook**。
