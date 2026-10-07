@@ -29,6 +29,7 @@ The toolbar has two rows: primary tools above and a rounded settings bar for the
 
 ## Getting started
 
+- Download the complete **penbook.zip** package from [GitHub Releases](https://github.com/wangcccccct/penbook/releases), extract it, and copy the `penbook` folder into your vault's `.obsidian/plugins/` directory. Keep the included PDF resource folders.
 - Enable **Penbook** under Obsidian Settings → Community plugins.
 - Click the pen icon in the left ribbon or run the Penbook command to create a notebook.
 - The default notebook folder is `手写笔记/`; you can change it in plugin settings.
@@ -57,6 +58,7 @@ Default shortcuts include `P` for pen, `E` for eraser, `L` for lasso, `H` for ha
 - Blank, ruled, grid, dot, Cornell, music, planner, and task-list paper, plus image backgrounds and custom templates.
 - Single-page, continuous-scroll, and two-page layouts; reading and immersive modes; left- or right-handed layouts and a bottom toolbar.
 - PDF page annotation, merging, reordering, and cropping. Imported bookmarks appear in the table of contents; native internal links follow the corresponding pages. Reading mode supports text selection. Common standard PDF annotations become editable Penbook objects; PDF export writes standard annotation objects and preserves original searchable page text. An embedded annotation archive retains Penbook-specific object details for reimport.
+- Native annotations retain their standard subtype, appearance streams, embedded files, comments, and popup/reply relationships. Select, move, resize, rotate, copy, delete, or edit their comments. FreeText text/style edits regenerate the visible appearance. Complex media, 3D, redaction, and form annotations retain their original data and preview; this feature handles interchange rather than adding playback, 3D interaction, form filling, signing, or applying redactions.
 - PDF export range and annotation/background options, PNG, SVG with vector strokes, shapes, text, tables, and tape, original-file copies, and Markdown indexes. Images and page backgrounds retain their image representation in SVG.
 - No external APIs, CDNs, or online recognition services. The PDF parser, character maps, standard fonts, and WASM resources ship with the plugin.
 
@@ -65,6 +67,7 @@ Default shortcuts include `P` for pen, `E` for eraser, `L` for lasso, `H` for ha
 ```sh
 npm install
 npm run build
+npm run package
 ```
 
 The built plugin is written to `release/penbook/`. Copy the entire folder into your vault at `.obsidian/plugins/penbook/`, including the `cmaps/`, `standard_fonts/`, and `wasm/` subdirectories, then enable Penbook in Obsidian. You can also copy the plugin and notebooks to an Android vault.

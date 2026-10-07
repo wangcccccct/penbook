@@ -1,6 +1,6 @@
 {
   "name": "obsidian-penbook",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "license": "MIT",
   "description": "A Goodnotes-inspired handwriting experience for Obsidian, independently implemented from scratch.",
   "author": "Penbook contributors",
@@ -21,7 +21,8 @@
   ],
   "scripts": {
     "build": "tsc --noEmit && node build.mjs",
-    "dev": "node build.mjs --watch"
+    "dev": "node build.mjs --watch",
+    "package": "npm run build && node scripts/package-release.mjs"
   },
   "dependencies": {
     "@phosphor-icons/core": "^2.1.1",

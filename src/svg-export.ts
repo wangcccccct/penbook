@@ -39,7 +39,8 @@ export function itemSvg(o:Item,book:Notebook,renderer:Renderer,ctx:CanvasRenderi
     if(o.shape==='rectangle'||o.shape==='rounded')content=`<rect width="${w}" height="${h}"${o.shape==='rounded'?` rx="${Math.min(20,w/4,h/4)}"`:''} ${paint}/>`;
     else if(o.shape==='ellipse')content=`<ellipse cx="${w/2}" cy="${h/2}" rx="${w/2}" ry="${h/2}" ${paint}/>`;
     else {
-      if(o.shape==='triangle')d=ringPath([o.points?.length===3?o.points:[[w/2,0],[w,h],[0,h]]]);
+      if(o.shape==='polygon'||o.shape==='polyline')d=(o.points??[]).map((p,i)=>`${i?'L':'M'}${number(p[0])},${number(p[1])}`).join(' ')+(o.shape==='polygon'?' Z':'');
+      else if(o.shape==='triangle')d=ringPath([o.points?.length===3?o.points:[[w/2,0],[w,h],[0,h]]]);
       else if(o.shape==='diamond')d=`M${w/2},0 L${w},${h/2} L${w/2},${h} L0,${h/2} Z`;
       else{const a=o.points?.[0]??[0,0],b=o.points?.[1]??[w,h],angle=Math.atan2(b[1]-a[1],b[0]-a[0]);d=`M${a[0]},${a[1]} L${b[0]},${b[1]}`;if(o.shape==='arrow')d+=` M${b[0]-16*Math.cos(angle-.45)},${b[1]-16*Math.sin(angle-.45)} L${b[0]},${b[1]} L${b[0]-16*Math.cos(angle+.45)},${b[1]-16*Math.sin(angle+.45)}`;}
       content=`<path d="${d}" ${paint}/>`;
@@ -58,5 +59,5 @@ export function itemSvg(o:Item,book:Notebook,renderer:Renderer,ctx:CanvasRenderi
     content+=clipped(text(o.text??'',x,8,w-16,size,align));
     if(o.kind==='link')content+=`<path d="M8,${size+10} L${w-8},${size+10}" fill="none" ${stroke}/>`;
   }
-  return `<g transform="${transform}" opacity="${o.opacity*(o.kind==='tape'&&o.revealed?0.16:1)}">${defs?`<defs>${defs}</defs>`:''}${content}</g>`;
+  return `<g transform="${transform}" opacity="${o.opacity*(o.kind==='tape'&&o.revealed?0.16:1)}"${o.pdfMarkup?.subtype==='Highlight'?' style="mix-blend-mode:multiply"':''}>${defs?`<defs>${defs}</defs>`:''}${content}</g>`;
 }

@@ -30,7 +30,7 @@ const sourceDoc=await pdfs.document('source',book);book.pages=await api.importPd
 console.log('Imported native PDF fixture.');
 assert.equal(book.pages.length,4);assert.equal(book.pages[0].pdfLinks[0].page,book.pages[1].id);assert.equal(book.pages[1].pdfBookmarks[0].level,1);
 assert.ok(book.pages.every(p=>p.items.length===2&&p.pdfText.includes('Original PDF searchable text')));
-const merged=api.newBook(),copies=api.copyPages(book.pages,book,merged);assert.equal(copies[0].pdfLinks[0].page,copies[1].id);assert.equal(Object.keys(merged.resources).length,1);assert.equal(merged.resources[copies[0].background.resource].data,book.resources.source.data);
+const merged=api.newBook(),copies=api.copyPages(book.pages,book,merged);assert.equal(copies[0].pdfLinks[0].page,copies[1].id);assert.equal(Object.values(merged.resources).filter(r=>r.type==='pdf').length,1);assert.equal(merged.resources[copies[0].background.resource].data,book.resources.source.data);
 const single=api.copyPages([book.pages[0]],book,api.newBook(),id=>`obsidian://penbook?page=${id}`)[0];assert.equal(single.pdfLinks[0].page,undefined);assert.ok(single.pdfLinks[0].url.includes(book.pages[1].id));
 const table={...api.item('table',170,80,180,110,'#222222'),rows:2,columns:2,cells:[['A&B','中文'],['Line 1\nLine 2','<>']],fontSize:14};book.pages[0].items.push(table);
 const tape={...api.item('tape',200,210,100,25,'#e79757'),points:[[0,12,.5],[100,12,.5]],width:24};book.pages[0].items.push(tape);
@@ -59,7 +59,7 @@ for(let i=0;i<4;i++){
 }
 assert.equal((await exported.getOutline())[0].items[0].title,'Section 1.1');
 const roundTrip=api.newBook(),roundPages=await api.importPdfPages(exported,'output','output.pdf',roundTrip);assert.deepEqual(roundPages[0].items.find(o=>o.kind==='table').cells,table.cells);assert.equal(roundPages[0].items.filter(o=>o.kind==='table').length,1);
-const restoredImage=roundPages[1].items.find(o=>o.kind==='image');assert.deepEqual(restoredImage.crop,imageItem.crop);assert.equal(roundTrip.resources[restoredImage.resource].data,book.resources.picture.data);
+const restoredImage=roundPages[1].items.find(o=>o.kind==='image'&&!o.pdfNative);assert.deepEqual(restoredImage.crop,imageItem.crop);assert.equal(roundTrip.resources[restoredImage.resource].data,book.resources.picture.data);
 // A third-party editor can change geometry/color without changing Rect or Contents.
 const edited=await PDFDocument.load(output),inkDict=edited.getPage(0).node.Annots().asArray().map(ref=>edited.context.lookup(ref)).find(d=>d instanceof PDFDict&&d.get(PDFName.of('Subtype'))===PDFName.of('Ink'));
 inkDict.set(PDFName.of('C'),edited.context.obj([0,0,1]));inkDict.set(PDFName.of('InkList'),edited.context.obj([[40,80,90,90,140,80]]));
@@ -73,7 +73,7 @@ console.log('PASS: editable tables, shared clipboard, vector SVG, native PDF ann
 if(process.argv.includes('--large')){
   const source=Buffer.from(sourceBytes),marker=source.lastIndexOf('startxref'),padding=Buffer.alloc(151*1024*1024,32);padding[0]=37;padding[padding.length-1]=10;
   const bytes=Buffer.concat([source.subarray(0,marker),padding,source.subarray(marker)]);
-  const largeBook=api.newBook();largeBook.resources.source={type:'pdf',name:'missing-original.pdf',mime:'application/pdf',data:api.encode(bytes),size:bytes.length};largeBook.resources.picture=book.resources.picture;largeBook.pages=structuredClone(book.pages);
+  const largeBook=api.newBook();largeBook.resources={...book.resources,source:{type:'pdf',name:'missing-original.pdf',mime:'application/pdf',data:api.encode(bytes),size:bytes.length}};largeBook.pages=structuredClone(book.pages);
   // Only the notebook is written: there is no source PDF on disk to fall back to.
   await writeFile('release/embedded-pdf-regression.penbook',JSON.stringify(largeBook));
   const reopened=api.parseBook(await readFile('release/embedded-pdf-regression.penbook','utf8'));

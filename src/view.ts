@@ -372,7 +372,7 @@ export class PenbookView extends TextFileView {
       else if(tool==='tape'&&!this.gesture){ctx.globalAlpha=.45;ctx.fillStyle=this.tapeColor;ctx.fillRect(x,y-12,80,24);ctx.globalAlpha=1;ctx.setLineDash([3/this.zoom,3/this.zoom]);ctx.strokeRect(x,y-12,80,24);}
       else if(tool==='sticky'){this.renderer.draw(ctx,{...item('sticky',x,y,220,140,'#292929'),backgroundColor:this.stickyColor,text:'输入便签文字',fontSize:18,opacity:.6});}
       else if(tool==='laser'&&!this.gesture){ctx.fillStyle=accent;ctx.beginPath();ctx.arc(x,y,5/this.zoom,0,Math.PI*2);ctx.fill();}
-      else if(!this.gesture&&tool!=='lasso'){const path=tool==='shape'?(this.automaticShape?SHAPE_ICONS.auto:SHAPE_ICONS[this.shape]):ICONS[tool as keyof typeof ICONS];if(path){ctx.translate(x+5/this.zoom,y+5/this.zoom);ctx.scale(24/256/this.zoom,24/256/this.zoom);ctx.fillStyle=muted;ctx.fill(new Path2D(path));}}
+      else if(!this.gesture&&tool!=='lasso'){const path=tool==='shape'?(this.automaticShape?SHAPE_ICONS.auto:SHAPE_ICONS[this.shape==='polygon'?'triangle':this.shape==='polyline'?'line':this.shape]):ICONS[tool as keyof typeof ICONS];if(path){ctx.translate(x+5/this.zoom,y+5/this.zoom);ctx.scale(24/256/this.zoom,24/256/this.zoom);ctx.fillStyle=muted;ctx.fill(new Path2D(path));}}
       ctx.restore();
     }
     if(this.laserTrail?.surface===s){const trail=this.laserTrail,points=trail.points;ctx.save();ctx.globalAlpha=trail.releasedAt===undefined?1:Math.max(0,1-(performance.now()-trail.releasedAt)/1000);ctx.strokeStyle=accent;ctx.fillStyle=accent;ctx.lineWidth=3/this.zoom;ctx.lineCap='round';ctx.lineJoin='round';ctx.shadowColor=accent;ctx.shadowBlur=10/this.zoom;if(this.laserMode==='line'){ctx.beginPath();for(const p of points){if(p.start)ctx.moveTo(p.point[0],p.point[1]);else ctx.lineTo(p.point[0],p.point[1]);}ctx.stroke();}const dots=this.laserMode==='dot'?points:points.filter((p,i)=>i===points.length-1||points[i+1].start);for(const p of dots){ctx.beginPath();ctx.arc(p.point[0],p.point[1],5/this.zoom,0,Math.PI*2);ctx.fill();}ctx.restore();}
@@ -529,13 +529,13 @@ export class PenbookView extends TextFileView {
     if(!this.selectionBar)return;this.selectionBar.empty();const objects=this.page?.items.filter(o=>this.selection.has(o.id))??[];if(!objects.length)return;this.selectionBar.createSpan({text:`${objects.length} 个对象`});
     const mutate=(fn:()=>void)=>{if(this.page.locked){new Notice('请先解锁页面');return;}const before=this.snapshot();fn();this.changed(before);this.repaint();this.drawSidebar();};
     this.button(this.selectionBar,'复制','复制选区',()=>this.copySelection());this.button(this.selectionBar,'粘贴','粘贴选区',()=>this.pasteSelection());this.button(this.selectionBar,'删除','删除选区（可撤销）',()=>mutate(()=>{this.page.items=this.page.items.filter(o=>!this.selection.has(o.id)||o.locked);this.selection.clear();}));
-    const colorButton=this.button(this.selectionBar,'颜色','修改选区颜色',()=>inkPalette(colorButton,{title:'选区颜色',value:objects[0]?.color??this.color,presets:this.plugin.settings.presetColors,history:this.plugin.settings.colorHistory,choose:color=>mutate(()=>objects.filter(o=>!o.locked).forEach(o=>o.color=color)),save:()=>void this.plugin.saveSettings()}));
+    const colorable=objects.filter(o=>o.kind!=='image');if(colorable.length){const colorButton=this.button(this.selectionBar,'颜色','修改选区颜色',()=>inkPalette(colorButton,{title:'选区颜色',value:colorable[0]?.color??this.color,presets:this.plugin.settings.presetColors,history:this.plugin.settings.colorHistory,choose:color=>mutate(()=>colorable.filter(o=>!o.locked).forEach(o=>o.color=color)),save:()=>void this.plugin.saveSettings()}));}
     this.button(this.selectionBar,'变换','旋转、缩放与透明度',()=>this.transform());
     this.button(this.selectionBar,'置顶','移到顶层',()=>mutate(()=>{this.page.items=[...this.page.items.filter(o=>!this.selection.has(o.id)),...objects];}));
     this.button(this.selectionBar,'置底','移到底层',()=>mutate(()=>{this.page.items=[...objects,...this.page.items.filter(o=>!this.selection.has(o.id))];}));
     this.button(this.selectionBar,objects.every(o=>o.locked)?'解锁':'锁定','锁定或解锁选区',()=>mutate(()=>{const locked=!objects.every(o=>o.locked);objects.forEach(o=>o.locked=locked);}));
     this.button(this.selectionBar,'组合','组合选区',()=>mutate(()=>{const group=uid();objects.forEach(o=>o.group=group);}));this.button(this.selectionBar,'解组','取消组合',()=>mutate(()=>objects.forEach(o=>delete o.group)));
-    if(objects.length===1){this.button(this.selectionBar,'编辑','编辑内容与样式',()=>this.editItem(objects[0]));if(objects[0].kind==='image')this.button(this.selectionBar,'裁剪','裁剪图片',()=>this.cropImage(objects[0]));}
+    if(objects.length===1){this.button(this.selectionBar,'编辑','编辑内容与样式',()=>this.editItem(objects[0]));if(objects[0].kind==='image'&&!objects[0].pdfNative)this.button(this.selectionBar,'裁剪','裁剪图片',()=>this.cropImage(objects[0]));}
     this.button(this.selectionBar,'移至页面','移动或复制选区到其他页',()=>this.transferObjects());
     if(objects.every(o=>o.kind==='sticky'))this.button(this.selectionBar,'解决便签','标记或取消已解决',()=>mutate(()=>objects.forEach(o=>o.resolved=!o.resolved)));
   }
@@ -561,6 +561,11 @@ export class PenbookView extends TextFileView {
     const before=this.snapshot();this.page.items.push(o);this.selection=new Set([o.id]);this.changed(before);this.setTool('lasso');this.repaint();this.drawSidebar();
   }
   private async editItem(o:Item,point?:Point){
+    if(o.pdfNative||o.pdfMarkup&&!['text','sticky'].includes(o.kind)){
+      if(o.locked||this.page.locked){new Notice('请先解锁对象或页面');return;}
+      const metadata=o.pdfNative??o.pdfMarkup!,book=this.book,page=this.page,value=await form(this.app,`PDF 批注 · ${metadata.subtype}`,[{key:'contents',name:'批注备注',value:o.text??o.pdfMarkup?.contents??'',type:'textarea'},{key:'author',name:'作者',value:metadata.author??''},{key:'subject',name:'主题',value:metadata.subject??''}]);
+      if(!value||this.book!==book||!page.items.includes(o))return;const before=this.snapshot();if(o.pdfNative)o.text=value.contents;else o.pdfMarkup!.contents=value.contents;metadata.author=value.author;if(value.subject||metadata.subject!==undefined)metadata.subject=value.subject;this.changed(before);this.repaint();this.drawSidebar();return;
+    }
     if(o.kind==='table'){
       if(o.locked||this.page.locked){new Notice('请先解锁对象或页面');return;}
       const p=point&&localPoint(o,point[0],point[1]),cell=p?[Math.min((o.rows??4)-1,Math.max(0,Math.floor(p[1]/o.bh*(o.rows??4)))),Math.min((o.columns??3)-1,Math.max(0,Math.floor(p[0]/o.bw*(o.columns??3))))]as[number,number]:undefined;

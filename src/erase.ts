@@ -69,7 +69,7 @@ export function splitErasedStroke(o:Item,outline:number[][]):Item[]{
     const left=Math.min(...xs),top=Math.min(...ys),bw=Math.max(.001,Math.max(...xs)-left),bh=Math.max(.001,Math.max(...ys)-top),w=bw*sx,h=bh*sy;
     const dx=(left+bw/2)*sx-o.w/2,dy=(top+bh/2)*sy-o.h/2;
     const shifted=polygon.map(ring=>ring.map(p=>[p[0]-left,p[1]-top] as Pair));
-    return{...o,id:uid(),group:undefined,x:o.x+o.w/2+dx*cos-dy*sin-w/2,y:o.y+o.h/2+dx*sin+dy*cos-h/2,w,h,bw,bh,points:o.points?.map(p=>[p[0]-left,p[1]-top,p[2]] as Point),frozenInk:shifted,eraseMasks:undefined};
+    return{...o,id:uid(),group:undefined,x:o.x+o.w/2+dx*cos-dy*sin-w/2,y:o.y+o.h/2+dx*sin+dy*cos-h/2,w,h,bw,bh,points:o.points?.map(p=>[p[0]-left,p[1]-top,p[2]] as Point),pdfMarkup:o.pdfMarkup?{...o.pdfMarkup,quadPoints:o.pdfMarkup.quadPoints?.map(p=>[p[0]-left,p[1]-top,p[2]] as Point)}:undefined,frozenInk:shifted,eraseMasks:undefined};
   });
   }catch(error){if(!geometryWarningShown){geometryWarningShown=true;console.warn('Penbook: 保留笔迹，未能完成断开分段。',error);}return[o];}
 }

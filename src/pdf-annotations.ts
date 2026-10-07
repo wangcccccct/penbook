@@ -25,6 +25,7 @@ const clipCommands=(d:string)=>d.replace(/[ML]\s*(-?[\d.]+(?:e[+-]?\d+)?)[, ]+(-
 function vectorAppearance(o:Item,renderer:Renderer):string|undefined{
   const w=o.bw,h=o.bh,width=o.width??2,color=rgb(o.color).join(' '),style=o.strokeStyle??o.ink?.style??'solid';
   let ops=`${color} rg ${color} RG ${width} w 1 J 1 j\n`;
+  if(o.pdfMarkup?.subtype==='Highlight')ops+='/Multiply gs\n';
   if(style!=='solid')ops+=`[${style==='dashed'?`${width*4} ${width*2}`:`0.1 ${width*2}`}] 0 d\n`;
   if(o.kind==='stroke'){
     if(o.eraseMasks?.length||o.frozenInk&&style!=='solid')ops+=clipCommands(erasureClipPath(o))+'W* n\n';
@@ -40,6 +41,7 @@ function vectorAppearance(o:Item,renderer:Renderer):string|undefined{
     d=`${r} 0 m ${w-r} 0 l ${w-r+k} 0 ${w} ${r-k} ${w} ${r} c ${w} ${h-r} l ${w} ${h-r+k} ${w-r+k} ${h} ${w-r} ${h} c ${r} ${h} l ${r-k} ${h} 0 ${h-r+k} 0 ${h-r} c 0 ${r} l 0 ${r-k} ${r-k} 0 ${r} 0 c h`;
   }else if(o.shape==='rectangle')d=`0 0 ${w} ${h} re`;
   else if(o.shape==='triangle')d=path(o.points?.length===3?o.points:[[w/2,0],[w,h],[0,h]],true);
+  else if(o.shape==='polygon'||o.shape==='polyline')d=path(o.points??[],o.shape==='polygon');
   else if(o.shape==='diamond')d=path([[w/2,0],[w,h/2],[w/2,h],[0,h/2]],true);
   else{const a=o.points?.[0]??[0,0],b=o.points?.[1]??[w,h],angle=Math.atan2(b[1]-a[1],b[0]-a[0]);d=path([a,b]);if(o.shape==='arrow')d+='\n'+path([[b[0]-16*Math.cos(angle-.45),b[1]-16*Math.sin(angle-.45)],b,[b[0]-16*Math.cos(angle+.45),b[1]-16*Math.sin(angle+.45)]]);}
   return ops+(o.fill&&!['line','arrow'].includes(o.shape??'')?`q /Fill gs ${d} f Q\n`:'')+d+'\nS';
@@ -49,7 +51,7 @@ export async function addObjectAnnotation(out:PDFDocument,target:PDFPage,page:Pa
   const local=(x:number,y:number)=>{const p=world(o,x,y);return map(p[0],p[1]);};
   const pad=Math.max(2,o.width??2),corners=[local(-pad,-pad),local(o.bw+pad,-pad),local(o.bw+pad,o.bh+pad),local(-pad,o.bh+pad)],rect=[Math.min(...corners.map(p=>p[0])),Math.min(...corners.map(p=>p[1])),Math.max(...corners.map(p=>p[0])),Math.max(...corners.map(p=>p[1]))];
   const origin=local(0,0),a=local(1,0),b=local(0,1),matrix=[a[0]-origin[0],a[1]-origin[1],b[0]-origin[0],b[1]-origin[1],...origin];
-  const opacity=o.opacity*(o.kind==='tape'&&o.revealed?0.16:1),vector=vectorAppearance(o,renderer);let stream='',resources:any={ExtGState:{Opacity:{Type:'ExtGState',ca:opacity,CA:opacity},Fill:{Type:'ExtGState',ca:opacity*.2,CA:opacity}}};
+  const opacity=o.opacity*(o.kind==='tape'&&o.revealed?0.16:1),vector=vectorAppearance(o,renderer);let stream='',resources:any={ExtGState:{Opacity:{Type:'ExtGState',ca:opacity,CA:opacity},Fill:{Type:'ExtGState',ca:opacity*.2,CA:opacity},Multiply:{Type:'ExtGState',BM:'Multiply'}}};
   if(vector!==undefined)stream=`q /Opacity gs ${matrix.map(number).join(' ')} cm\n${vector}\nQ`;
   else{
     const screen=[world(o,-pad,-pad),world(o,o.bw+pad,-pad),world(o,o.bw+pad,o.bh+pad),world(o,-pad,o.bh+pad)],sx=Math.min(...screen.map(p=>p[0])),sy=Math.min(...screen.map(p=>p[1])),sw=Math.max(...screen.map(p=>p[0]))-sx,sh=Math.max(...screen.map(p=>p[1]))-sy,scale=Math.min(1.5,Math.sqrt(1_000_000/(sw*sh)));
@@ -59,22 +61,29 @@ export async function addObjectAnnotation(out:PDFDocument,target:PDFPage,page:Pa
       const origin=map(sx,sy+sh),right=map(sx+sw,sy+sh),top=map(sx,sy),m=[right[0]-origin[0],right[1]-origin[1],top[0]-origin[0],top[1]-origin[1],...origin];resources={XObject:{Image:image.ref}};stream=`q ${m.map(number).join(' ')} cm /Image Do Q`;
     }finally{canvas.width=canvas.height=1;}
   }
+  if(o.kind==='text'){resources.Font={Helv:{Type:'Font',Subtype:'Type1',BaseFont:'Helvetica'}};stream=`BT /Helv ${o.fontSize??22} Tf ${rgb(o.color).join(' ')} rg 3 Tr () Tj ET\n${stream}`;}
   const ap=out.context.register(out.context.flateStream(stream,{Type:'XObject',Subtype:'Form',BBox:rect,Resources:resources}));
   let subtype='Stamp';const extra:any={};
   if(o.kind==='stroke'&&o.pen!=='highlighter'){subtype='Ink';extra.InkList=[(o.points??[]).flatMap(p=>local(p[0],p[1]))];}
   else if(o.kind==='stroke'&&o.pen==='highlighter'){subtype='Highlight';extra.QuadPoints=[...local(0,0),...local(o.bw,0),...local(0,o.bh),...local(o.bw,o.bh)];}
-  else if(o.kind==='sticky'){subtype='Text';extra.Name='Comment';}
+  if(o.kind==='stroke'&&['Highlight','Underline','StrikeOut','Squiggly'].includes(o.pdfMarkup?.subtype??'')){
+    subtype=o.pdfMarkup!.subtype;delete extra.InkList;extra.QuadPoints=(o.pdfMarkup!.quadPoints??[[0,0],[o.bw,0],[0,o.bh],[o.bw,o.bh]]).flatMap(p=>local(p[0],p[1]));
+  }
+  if(o.kind==='sticky'){subtype='Text';extra.Name='Comment';}
   else if(o.kind==='text'){subtype='FreeText';extra.DA=PDFString.of(`/Helv ${o.fontSize??22} Tf ${rgb(o.color).join(' ')} rg`);}
   else if(o.kind==='shape'){
     if(['line','arrow'].includes(o.shape??'')){subtype='Line';const a=o.points?.[0]??[0,0],b=o.points?.[1]??[o.bw,o.bh];extra.L=[...local(a[0],a[1]),...local(b[0],b[1])];if(o.shape==='arrow')extra.LE=['None','OpenArrow'];}
-    else if(o.shape==='triangle'||o.shape==='diamond'){subtype='Polygon';extra.Vertices=(o.shape==='diamond'?[[o.bw/2,0],[o.bw,o.bh/2],[o.bw/2,o.bh],[0,o.bh/2]]:o.points?.length===3?o.points:[[o.bw/2,0],[o.bw,o.bh],[0,o.bh]]).flatMap(p=>local(p[0],p[1]));}
+    else if(o.shape==='triangle'||o.shape==='diamond'||o.shape==='polygon'||o.shape==='polyline'){subtype=o.shape==='polyline'?'PolyLine':'Polygon';extra.Vertices=(o.shape==='diamond'?[[o.bw/2,0],[o.bw,o.bh/2],[o.bw/2,o.bh],[0,o.bh/2]]:o.points?.length?o.points:[[o.bw/2,0],[o.bw,o.bh],[0,o.bh]]).flatMap(p=>local(p[0],p[1]));}
     else subtype=o.shape==='ellipse'?'Circle':'Square';
   }
   else if(o.kind==='link'){subtype='Link';if(o.target)extra.A={S:'URI',URI:PDFString.of(o.target)};extra.Border=[0,0,0];}
-  const contents=o.kind==='table'?(o.cells??[]).map(r=>r.join('\t')).join('\n'):o.text??'',ref=out.context.register(out.context.obj({Type:'Annot',Subtype:subtype,Rect:rect,P:target.ref,F:4,CA:opacity,C:rgb(o.color),BS:{W:o.width??2,S:'S'},Contents:PDFHexString.fromText(contents),NM:PDFString.of(o.id),AP:{N:ap},...extra}));target.node.addAnnot(ref);
+  if(o.pdfMarkup?.lineEndings)extra.LE=o.pdfMarkup.lineEndings;
+  if(o.pdfMarkup?.author!==undefined)extra.T=PDFHexString.fromText(o.pdfMarkup.author);
+  if(o.pdfMarkup?.subject!==undefined)extra.Subj=PDFHexString.fromText(o.pdfMarkup.subject);
+  const contents=o.kind==='table'?(o.cells??[]).map(r=>r.join('\t')).join('\n'):o.text??o.pdfMarkup?.contents??'',ref=out.context.register(out.context.obj({Type:'Annot',Subtype:subtype,Rect:rect,P:target.ref,F:4,CA:opacity,C:rgb(o.color),BS:{W:o.width??2,S:'S'},Contents:PDFHexString.fromText(contents),NM:PDFString.of(o.id),AP:{N:ap},...extra}));target.node.addAnnot(ref);
   const native:Record<string,unknown>={subtype,color:rgb(o.color).map(v=>Math.round(v*255)),width:o.kind==='link'?0:o.width??2,modificationDate:null,rotation:0};
   if(extra.InkList){native.inkLists=extra.InkList;native.opacity=opacity;}
-  if(extra.QuadPoints){native.quadPoints=extra.QuadPoints;native.opacity=opacity;}
+  if(extra.QuadPoints){native.quadPoints=extra.QuadPoints;if(subtype==='Highlight')native.opacity=opacity;}
   if(extra.L)native.lineCoordinates=extra.L;
   if(extra.Vertices)native.vertices=extra.Vertices;
   if(o.kind==='text')native.fontSize=o.fontSize??22;

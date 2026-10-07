@@ -1,5 +1,5 @@
 import { getStroke } from 'perfect-freehand';
-import { Item, Page, Notebook, resourceUrl } from './model';
+import { Item, Page, Notebook, resourceUrl, nativeTextStyle } from './model';
 import { erasureClipPath } from './erase';
 import { BudgetCache } from './resources';
 import { tableSize, wrapText } from './table';
@@ -78,6 +78,8 @@ export class Renderer {
     ctx.save(); ctx.translate(o.x+o.w/2,o.y+o.h/2); ctx.rotate(o.rotation*Math.PI/180); ctx.translate(-o.w/2,-o.h/2);
     ctx.scale(o.w/o.bw,o.h/o.bh); ctx.globalAlpha=o.opacity; ctx.fillStyle=o.color; ctx.strokeStyle=o.color;
     const w=o.bw,h=o.bh; ctx.lineWidth=o.width??2; ctx.lineCap='round'; ctx.lineJoin='round';
+    if(o.pdfMarkup?.subtype==='Highlight')ctx.globalCompositeOperation='multiply';
+    if(o.pdfNative?.baselineStyle&&img&&o.pdfNative.baselineStyle===nativeTextStyle(o)){ctx.drawImage(img,0,0,w,h);ctx.restore();return;}
     if (o.kind==='stroke') {
       const profile=o.ink,style=o.strokeStyle??profile?.style??'solid';
       if(o.eraseMasks?.length||o.frozenInk&&style!=='solid'){const cached=this.clip(o);if(cached.inkPath)ctx.clip(cached.inkPath,'evenodd');ctx.clip(cached.path,'evenodd');}
@@ -94,7 +96,7 @@ export class Renderer {
       else if(o.shape==='rounded')ctx.roundRect(0,0,w,h,Math.min(20,w/4,h/4));
       else if(o.shape==='diamond'){ctx.moveTo(w/2,0);ctx.lineTo(w,h/2);ctx.lineTo(w/2,h);ctx.lineTo(0,h/2);ctx.closePath();}
       else if(o.shape==='ellipse') ctx.ellipse(w/2,h/2,w/2,h/2,0,0,Math.PI*2);
-      else if(o.shape==='triangle') { const vertices=o.points?.length===3?o.points:[[w/2,0],[w,h],[0,h]];ctx.moveTo(vertices[0][0],vertices[0][1]);for(const p of vertices.slice(1))ctx.lineTo(p[0],p[1]);ctx.closePath(); }
+      else if(o.shape==='triangle'||o.shape==='polygon'||o.shape==='polyline') { const vertices=o.points?.length?o.points:[[w/2,0],[w,h],[0,h]];ctx.moveTo(vertices[0][0],vertices[0][1]);for(const p of vertices.slice(1))ctx.lineTo(p[0],p[1]);if(o.shape!=='polyline')ctx.closePath(); }
       else { const a=o.points?.[0]??[0,0], b=o.points?.[1]??[w,h]; ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]); if(o.shape==='arrow') { const angle=Math.atan2(b[1]-a[1],b[0]-a[0]),l=16; ctx.moveTo(b[0]-l*Math.cos(angle-.45),b[1]-l*Math.sin(angle-.45)); ctx.lineTo(b[0],b[1]); ctx.lineTo(b[0]-l*Math.cos(angle+.45),b[1]-l*Math.sin(angle+.45)); } }
       if(o.fill&&!['line','arrow'].includes(o.shape??'')){ctx.save();ctx.globalAlpha*=.2;ctx.fill();ctx.restore();}
       ctx.stroke();

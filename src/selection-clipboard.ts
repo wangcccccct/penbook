@@ -2,7 +2,7 @@ import { Item, Notebook, clone, uid } from './model';
 export interface SelectionClipboard { items:Item[]; resources:Notebook['resources']; }
 export function selectionClipboard(items:Item[],book:Notebook):SelectionClipboard {
   const resources:Notebook['resources']={};
-  for(const o of items)if(o.resource&&book.resources[o.resource])resources[o.resource]=book.resources[o.resource];
+  for(const o of items)for(const key of[o.resource,o.pdfNative?.resource])if(key&&book.resources[key])resources[key]=book.resources[key];
   return {items:clone(items),resources:{...resources}};
 }
 export function pasteItems(clipboard:SelectionClipboard,book:Notebook,offset=20):Item[] {
@@ -14,6 +14,7 @@ export function pasteItems(clipboard:SelectionClipboard,book:Notebook,offset=20)
   return clone(clipboard.items).map(o=>{
     o.id=uid();o.x+=offset;o.y+=offset;o.locked=false;delete o.pdfAnnotationId;
     if(o.resource)o.resource=resources.get(o.resource)??o.resource;
+    if(o.pdfNative)o.pdfNative.resource=resources.get(o.pdfNative.resource)??o.pdfNative.resource;
     if(o.group){if(!groups.has(o.group))groups.set(o.group,uid());o.group=groups.get(o.group);}
     return o;
   });

@@ -29,6 +29,7 @@ Penbook 是一款面向 Obsidian 桌面版和 Android 平板的本地手写笔�
 
 ## 开始使用
 
+- 从 [GitHub Releases](https://github.com/wangcccccct/penbook/releases) 下载完整的 **penbook.zip**，解压后将 `penbook` 文件夹复制到库的 `.obsidian/plugins/` 目录，保留包内的 PDF 资源目录。
 - 在 Obsidian 设置 → 第三方插件中启用 **Penbook**。
 - 点击左侧工具栏的钢笔图标，或在命令面板中运行 Penbook 新建笔记本命令。
 - 默认笔记本目录为 `手写笔记/`，可在插件设置中修改。
@@ -57,6 +58,7 @@ Penbook 是一款面向 Obsidian 桌面版和 Android 平板的本地手写笔�
 - 空白纸、横线、方格、点阵、康奈尔、五线谱、规划表和任务清单模板；支持图片背景和自定义模板。
 - 支持单页、连续滚动和双页布局，以及阅读和沉浸模式、左右手布局和底部工具栏。
 - 支持 PDF 页面批注、合并、重排和裁切。导入的 PDF 书签显示在目录中，原 PDF 内部链接可跳转到对应页面。阅读模式支持选择 PDF 文本。常见标准 PDF 批注可转为可编辑的 Penbook 对象；导出时生成标准批注对象，并保留原页面可搜索文字。内嵌的批注档案保留 Penbook 特有对象数据，便于重新导入。
+- 原生批注保留标准类型、外观流、内嵌附件、备注及弹出窗口和回复关系，支持选中、移动、缩放、旋转、复制、删除和编辑备注。FreeText 的文字或样式修改会更新可见外观。复杂媒体、3D、遮盖标记和表单批注保留原始数据与预览；此功能用于互转，未新增媒体播放、3D 交互、表单填写、数字签名或实际应用遮盖操作。
 - 支持 PDF 导出范围、批注与背景选项、PNG、原始文件副本和 Markdown 索引。SVG 导出中的笔迹、图形、文本、表格和胶带保留为矢量，图片和页面背景保留为图像。
 - 不调用外部 API、CDN 或在线识别服务。PDF 解析器、字符映射、标准字体和 WASM 资源随插件打包。
 
@@ -65,6 +67,7 @@ Penbook 是一款面向 Obsidian 桌面版和 Android 平板的本地手写笔�
 ```sh
 npm install
 npm run build
+npm run package
 ```
 
 构建产物位于 `release/penbook/`。将整个目录复制到库的 `.obsidian/plugins/penbook/`，包括 `cmaps/`、`standard_fonts/` 和 `wasm/` 子目录，然后在 Obsidian 中启用插件。插件目录和笔记本也可以复制到 Android 库中使用。

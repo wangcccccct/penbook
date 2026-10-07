@@ -6,6 +6,7 @@ import { Renderer } from './render';
 import { BudgetCache, RenderQueue } from './resources';
 import { addObjectAnnotation, applyPdfCrop, writePdfNavigation } from './pdf-annotations';
 import { ANNOTATION_ATTACHMENT, AnnotationArchive } from './pdf-import';
+import { NativeAnnotations } from './pdf-native-export';
 async function pngBytes(canvas:HTMLCanvasElement){try{const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('无法编码页面图片')),'image/png'));return new Uint8Array(await blob.arrayBuffer());}finally{canvas.width=canvas.height=1;}}
 
 export class PDFs {
@@ -101,14 +102,15 @@ export class PDFs {
   }
   async export(book:Notebook,pages:Page[],renderer:Renderer,mode:'all'|'ink'|'background') {
     const out=await PDFDocument.create(),archive:AnnotationArchive={format:'penbook-annotations',version:1,resources:{},pages:[]},records:{page:Page;target:import('pdf-lib').PDFPage}[]=[];
-    const native=new Map<Page,PDFPage>(),keys=new Set(pages.filter(p=>mode!=='ink'&&p.background&&book.resources[p.background.resource]?.type==='pdf').map(p=>p.background!.resource));
+    const native=new Map<Page,PDFPage>(),nativeAnnotations=new NativeAnnotations(out,{...book,pages}),keys=new Set([...pages.filter(p=>mode!=='ink'&&p.background&&book.resources[p.background.resource]?.type==='pdf').map(p=>p.background!.resource),...pages.flatMap(p=>mode==='background'?[]:p.items.flatMap(o=>o.pdfNative?[o.pdfNative.resource]:[]))]);
     for(const key of keys){
       const resource=book.resources[key];
-      const source=await PDFDocument.load(decode(resource.data)),requested=pages.filter(p=>p.background?.resource===key),indices=[...new Set(requested.map(p=>p.background!.page??0))],copied=await out.copyPages(source,indices);
+      const source=await PDFDocument.load(decode(resource.data)),requested=pages.filter(p=>mode!=='ink'&&p.background?.resource===key),indices=[...new Set(requested.map(p=>p.background!.page??0))],copied=await out.copyPages(source,indices);nativeAnnotations.prepare(key,source);
       for(const page of requested){
         const index=page.background!.page??0,base=copied[indices.indexOf(index)],node=base.node.clone(out.context),target=PDFPage.of(node,out.context.register(node),out);target.setRotation(degrees((target.getRotation().angle+(page.backgroundRotation??0))%360));applyPdfCrop(target,page);
-        const originals=source.getPage(index).node.Annots()?.asArray()??[],annotations=base.node.Annots()?.asArray()??[],ids=new Set(page.pdfAnnotationIds),keep:PDFRef[]=[];
-        annotations.forEach((ref,i)=>{const original=originals[i],originalDict=source.context.lookup(original);if(original instanceof PDFRef&&ids.has(`${original.objectNumber}R${original.generationNumber||''}`)||page.pdfLinks&&originalDict instanceof PDFDict&&originalDict.get(PDFName.of('Subtype'))===PDFName.of('Link'))return;const copiedDict=out.context.lookup(ref);if(copiedDict instanceof PDFDict){const dictionary=copiedDict.clone(out.context);dictionary.set(PDFName.of('P'),target.ref);keep.push(out.context.register(dictionary));}});
+        const originals=source.getPage(index).node.Annots()?.asArray()??[],annotations=base.node.Annots()?.asArray()??[],ids=new Set(page.pdfAnnotationIds),keep:PDFRef[]=[],aliases=new Map<string,PDFRef>();
+        annotations.forEach((ref,i)=>{const original=originals[i],originalDict=source.context.lookup(original),parent=originalDict instanceof PDFDict&&originalDict.get(PDFName.of('Parent'));if(original instanceof PDFRef&&ids.has(`${original.objectNumber}R${original.generationNumber||''}`)||originalDict instanceof PDFDict&&originalDict.get(PDFName.of('Subtype'))===PDFName.of('Popup')&&parent instanceof PDFRef&&ids.has(`${parent.objectNumber}R${parent.generationNumber||''}`)||page.pdfLinks&&originalDict instanceof PDFDict&&originalDict.get(PDFName.of('Subtype'))===PDFName.of('Link'))return;const copiedDict=out.context.lookup(ref);if(copiedDict instanceof PDFDict){const dictionary=copiedDict.clone(out.context);dictionary.set(PDFName.of('P'),target.ref);const registered=out.context.register(dictionary);aliases.set(ref.toString(),registered);keep.push(registered);}});
+        for(const ref of keep){const d=out.context.lookup(ref,PDFDict);for(const key of['Parent','Popup','IRT']){const old=d.get(PDFName.of(key)),replacement=old&&aliases.get(old.toString());if(replacement)d.set(PDFName.of(key),replacement);}}
         node.set(PDFName.of('Annots'),out.context.obj(keep));native.set(page,target);
       }
       await new Promise<void>(r=>setTimeout(r,0));
@@ -123,10 +125,11 @@ export class PDFs {
         if(mode!=='ink'){const image=await out.embedPng(await pngBytes(await this.canvas(page,book,renderer,1.5,'background')));target.drawImage(image,{x:0,y:0,width:page.width,height:page.height});}
       }
       records.push({page,target});const saved:AnnotationArchive['pages'][number]={width:page.width,height:page.height,annotations:[]};archive.pages.push(saved);
-      if(mode!=='background')for(const o of page.items){saved.annotations.push(await addObjectAnnotation(out,target,page,o,book,renderer));if(o.resource&&book.resources[o.resource]?.type==='image')archive.resources[o.resource]=book.resources[o.resource];}
+      if(mode!=='background')for(const o of page.items){if(o.pdfNative){await nativeAnnotations.add(target,page,o,renderer);continue;}saved.annotations.push(await addObjectAnnotation(out,target,page,o,book,renderer));if(o.resource&&book.resources[o.resource]?.type==='image')archive.resources[o.resource]=book.resources[o.resource];}
       await new Promise<void>(r=>setTimeout(r,0));
     }
     writePdfNavigation(out,records);
+    nativeAnnotations.finish();
     if(mode!=='background')await out.attach(new TextEncoder().encode(JSON.stringify(archive)),ANNOTATION_ATTACHMENT,{mimeType:'application/json',description:'Penbook editable annotation data'});
     return out.save();
   }

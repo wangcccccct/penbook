@@ -1,7 +1,7 @@
 export type Point = [number, number, number];
 export type Paper = 'blank' | 'ruled' | 'grid' | 'dots' | 'cornell' | 'music' | 'planner' | 'tasks' | 'swot' | 'kanban' | 'finance';
 export type Pen = 'ballpoint' | 'fountain' | 'brush' | 'pencil' | 'highlighter';
-export type Shape = 'line' | 'arrow' | 'rectangle' | 'ellipse' | 'triangle' | 'diamond' | 'rounded';
+export type Shape = 'line' | 'arrow' | 'rectangle' | 'ellipse' | 'triangle' | 'diamond' | 'rounded' | 'polygon' | 'polyline';
 export type StrokeStyle='solid'|'dashed'|'dotted';
 export interface InkProfile { tip:number; sensitivity:number; flatness:number; stability:number; style:StrokeStyle; reduceLatency:boolean; straight:boolean; holdToSnap:boolean; alignShapes:boolean; fill:boolean; autoShape?:boolean }
 export const DEFAULT_INK:InkProfile={tip:25,sensitivity:50,flatness:0,stability:0,style:'solid',reduceLatency:true,straight:false,holdToSnap:false,alignShapes:true,fill:false};
@@ -16,6 +16,8 @@ export interface Item {
   align?: CanvasTextAlign; resource?: string; target?: string; rows?: number; columns?: number;
   cells?: string[][];
   pdfAnnotationId?: string;
+  pdfMarkup?:{subtype:string;contents?:string;author?:string;subject?:string;quadPoints?:Point[];lineEndings?:string[]};
+  pdfNative?:{resource:string;page:number;id:string;subtype:string;matrix:number[];author?:string;subject?:string;fieldName?:string;baselineStyle?:string};
   crop?: { x: number; y: number; w: number; h: number };
   ink?:InkProfile; strokeStyle?:StrokeStyle; fill?:boolean; backgroundColor?:string; lineHeight?:number; resolved?:boolean; revealed?:boolean;
 }
@@ -37,6 +39,7 @@ export interface Notebook {
 }
 export const uid = () => crypto.randomUUID();
 export const clone = <T>(value: T): T => structuredClone(value);
+export const nativeTextStyle=(o:Item)=>JSON.stringify([o.text,o.color,o.font,o.fontSize,o.bold,o.italic,o.align,o.lineHeight]);
 export function newPage(paper: Paper = 'ruled'): Page {
   return { id: uid(), title: '', width: 794, height: 1123, paper, color: '#ffffff', spacing: 28, items: [], bookmark: false, tags: [], ocr: '', pdfText: '' };
 }
@@ -57,6 +60,8 @@ export function parseBook(text: string): Notebook {
       if (o.points && (!Array.isArray(o.points) || o.points.some((p: unknown) => !Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite)))) throw new Error('笔迹数据不完整。');
       if(o.eraseMasks&&(!Array.isArray(o.eraseMasks)||o.eraseMasks.some((polygon:unknown)=>!Array.isArray(polygon)||polygon.some((ring:unknown)=>!Array.isArray(ring)||ring.some((p:unknown)=>!Array.isArray(p)||p.length!==2||!p.every(Number.isFinite))))))throw new Error('擦除数据不完整。');
       if(o.frozenInk&&(!Array.isArray(o.frozenInk)||o.frozenInk.some((r:unknown)=>!Array.isArray(r)||r.some((p:unknown)=>!Array.isArray(p)||p.length!==2||!p.every(Number.isFinite)))))throw new Error('笔迹轮廓数据不完整。');
+      if(o.pdfNative&&(!Array.isArray(o.pdfNative.matrix)||o.pdfNative.matrix.length!==6||!o.pdfNative.matrix.every(Number.isFinite)||typeof o.pdfNative.resource!=='string'||typeof o.pdfNative.id!=='string'||typeof o.pdfNative.subtype!=='string'||!Number.isInteger(o.pdfNative.page)||o.pdfNative.page<0))throw new Error('原始 PDF 批注数据不完整。');
+      if(o.pdfMarkup?.quadPoints&&(!Array.isArray(o.pdfMarkup.quadPoints)||o.pdfMarkup.quadPoints.some((p:unknown)=>!Array.isArray(p)||p.length!==3||!p.every(Number.isFinite))))throw new Error('PDF 文字标记数据不完整。');
       if(o.kind==='table'){
         if(o.rows!==undefined&&(!Number.isInteger(o.rows)||o.rows<1||o.rows>50)||o.columns!==undefined&&(!Number.isInteger(o.columns)||o.columns<1||o.columns>30)||o.cells!==undefined&&(!Array.isArray(o.cells)||o.cells.some((row:unknown)=>!Array.isArray(row)||row.some((cell:unknown)=>typeof cell!=='string'))))throw new Error('表格数据不完整，原文件未被修改。');
         const rows=Number.isFinite(o.rows)?Math.max(1,Math.min(50,Math.floor(o.rows))):4,columns=Number.isFinite(o.columns)?Math.max(1,Math.min(30,Math.floor(o.columns))):3;
