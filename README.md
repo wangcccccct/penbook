@@ -4,79 +4,75 @@
 
 Independently implemented from scratch. Not affiliated with or endorsed by Goodnotes.
 
-为 Obsidian 带来灵感源自 Goodnotes 的手写体验；本项目独立从零实现，与 Goodnotes 无隶属或背书关系。
+Penbook is a local handwriting notebook plugin for Obsidian desktop and Android tablets. It supports pressure input from the S Pen through Pointer Events and does not rely on online services at runtime. Each notebook is a self-contained `.penbook` JSON file that stores strokes, pages, images, and the original PDF.
 
-为 Obsidian 桌面版和 Android 平板设计的本地手写笔记插件。使用 S Pen / Pointer Events 压感输入，不依赖运行时在线服务。笔记本是自包含的 `.penbook` JSON 文件，笔迹、页面、图片及原始 PDF 都保存在文件内。
+The interface follows Obsidian theme variables and adapts to light and dark themes. Icons use the regular Phosphor Icons style; rounded-rectangle and laser-pointer symbols are drawn separately. No remote icon fonts are used.
 
-界面使用 Obsidian 主题变量，跟随当前主题和明暗模式。图标使用 Phosphor Icons regular 风格；单独绘制圆角矩形和激光笔符号，无远程图标字体。
+The toolbar has two rows: primary tools above and a rounded settings bar for the current tool below. Both rows support touch swipes, horizontal trackpad scrolling, and the mouse wheel. The toolbar includes pen styles, three preset widths, custom width, current and recent colors, page navigation, search, selection, drawing, PDF annotation, export, and page options.
 
-顶部工具栏采用两层结构：上层为主要工具，下层为当前工具的圆角胶囊设置区。两层都支持触控左右滑动、触控板横向滚动或鼠标滚轮；有剩余内容的一侧显示渐变遮挡。笔型、三档笔宽、自定义笔宽、当前颜色与常用色位于下层。按钮包含悬停、按下和键盘焦点反馈。
+## Getting started
 
-工具栏左侧为页面列表、搜索、沉浸模式；中间为选择、笔、橡皮擦、文本、图片、图形、便签、激光笔、胶带、链接、表格、平移、阅读；右侧为新增页面、导出、页面选项。超出宽度可滑动。选区操作合并在浮动工具设置栏中，只有选中对象时显示；工具设置以图标附近的弹层呈现。
+- Enable **Penbook** under Obsidian Settings → Community plugins.
+- Click the pen icon in the left ribbon or run the Penbook command to create a notebook.
+- The default notebook folder is `手写笔记/`; you can change it in plugin settings.
+- Write with an S Pen or mouse. Touch pans by default, and two-finger gestures zoom. Finger writing can be enabled in the toolbar menu.
+- If the operating system reports the pen side button or eraser end through Pointer Events, Penbook temporarily switches to the eraser.
+- Use the lasso to select objects. Drag the selection to move it or its lower-right handle to resize it. The selection toolbar includes rotation, opacity, grouping, locking, layer order, and moving objects between pages.
+- Double-click text, sticky notes, or links to edit them. In reading mode, click a link to open its target.
+- Choose a PDF from the vault, import one from the device, or drop it onto the canvas. Penbook creates a background for each page and stores the original PDF in the notebook.
+- Reorder pages by dragging them in the page list. Open page options with the context menu or, on touch devices, the menu in the upper-right corner.
+- Exports are saved in `手写笔记/导出/`; a Markdown index is saved beside the notebook.
+- Use **Copy page link** to link to a page from Markdown. You can also embed a page with a `penbook` code block containing `手写笔记/Notebook.penbook#PAGE_UUID`. Export a preview first to display images.
 
-## 使用
+Default shortcuts include `P` for pen, `E` for eraser, `L` for lasso, `H` for hand, `Ctrl/Cmd+Z` to undo, `Ctrl/Cmd+Shift+Z` to redo, `Ctrl/Cmd+C/V` for the internal selection clipboard, `Delete` to remove a selection, `PageUp/PageDown` to navigate pages, `Ctrl/Cmd+S` to save, and `Escape` to cancel the current stroke or selection.
 
-- 在 Obsidian 设置 → 第三方插件中启用 **Penbook 手写笔记**。
-- 点击左侧钢笔按钮，或运行命令 **Penbook：新建手写笔记本**。
-- 默认笔记本目录是 `手写笔记/`，可以在插件设置中修改。
-- S Pen 和鼠标书写；手指默认平移，双指缩放。可在工具栏菜单中开启手指书写。
-- 笔侧键或橡皮端如果被系统以 Pointer Events 传入，则临时切换橡皮擦。
-- 套索选中后拖动选框移动对象，拖动右下角缩放；选区工具栏提供旋转、透明度、组合、锁定、层次与跨页移动。
-- 双击文字、便签或链接编辑内容；阅读模式中点击链接打开目标。
-- PDF 可以从库内选择、从设备导入或拖入画布。导入后生成逐页背景，原 PDF 保存在笔记本内。
-- 页面列表支持拖动排序、右键选项；触控设备也可通过右上角菜单打开当前页选项。
-- 导出文件保存在 `手写笔记/导出/`；Markdown 索引保存在笔记本目录。
-- 通过“复制页面链接”在 Markdown 中跳转到具体页。也可以写 `penbook` 代码块，内容为 `手写笔记/名称.penbook#页面UUID`。先导出预览可显示图片。
+## Features
 
-快捷键：`P` 笔、`E` 橡皮、`L` 套索、`H` 平移，`Ctrl/Cmd+Z` 撤销，`Ctrl/Cmd+Shift+Z` 重做，`Ctrl/Cmd+C/V` 内部选区复制粘贴，`Delete` 删除选区，`PageUp/PageDown` 翻页，`Ctrl/Cmd+S` 保存，`Escape` 取消当前笔划或选择。
+- Fountain, ballpoint, brush, pencil, and highlighter pens with pressure curves, color, width, and local saving.
+- Round stroke caps, flatness, pressure sensitivity, stabilization, solid/dashed/dotted lines, and straight-line assistance. Use preset, custom, or recent colors, HEX input, or sample a color from the page.
+- Fine, standard, and whole-stroke erasers. Fine mode removes the exact touched area within the cursor radius; standard mode cuts in short segments of about 3 px. Erased strokes split into separate objects where needed. The eraser includes a size preview, highlighter-only and tape-only modes, and an option to return to the previous tool after erasing.
+- Notebook covers and paper gallery, spine colors, standard and custom page sizes, orientation, and built-in planner templates.
+- Tape that hides and reveals strokes; laser-pointer dots and lines that fade one second after release; sticky-note colors and resolved state.
+- In-place text and sticky-note editing. Configure font size, font, bold, italic, alignment, line spacing, and fixed text mode. Desktop font menus read installed fonts locally; Android uses available font families.
+- Whole-stroke and partial erasing; lasso selection; move, resize, rotate, opacity, grouping, locking, and layer ordering.
+- Lines, arrows, rectangles, ellipses, and triangles, plus text, sticky notes, images, links, and blank tables.
+- Multi-page management, bookmarks, titles, tags, search across text objects and extracted PDF text, a table of contents, and copying or moving pages between notebooks.
+- Blank, ruled, grid, dot, Cornell, music, planner, and task-list paper, plus image backgrounds and custom templates.
+- Single-page, continuous-scroll, and two-page layouts; reading and immersive modes; left- or right-handed layouts and a bottom toolbar.
+- PDF page annotation, merging, and reordering. Reading mode supports text selection. PDF export preserves original page text and overlays annotations.
+- PDF export range and annotation/background options, PNG, SVG vector stroke export, original-file copies, and Markdown indexes.
+- No external APIs, CDNs, or online recognition services. The PDF parser, character maps, standard fonts, and WASM resources ship with the plugin.
 
-## 已实现范围
+## Limitations
 
-- 钢笔、圆珠笔、毛笔、铅笔、荧光笔；压感曲线、颜色、笔宽；本地保存。
-- 圆头笔迹、扁平度、压力灵敏度、稳定性、实线/虚线/点线、直线辅助；预设/自定义/历史颜色、HEX 与页面吸色。
-- 精细/标准/整笔画橡皮擦：保留原笔迹轮廓，精细按当前半径精确擦除接触区域，标准按约 3px 长的短段切除；擦断后按连通部分拆为独立对象；尺寸预览、只擦荧光笔或胶带、擦除后切回前一工具。
-- 新建笔记本封面和纸张画廊、书脊颜色、标准尺寸/横纵方向、自定义尺寸、本地规划模板。
-- 胶带遮盖与揭开、激光笔点/线与松开后 1 秒淡出，淡出期间再次按下会保留旧轨迹并重新计时；便签颜色与已解决状态。
-- 文本和便签在页面原地编辑，点外部提交，Esc 取消；字号、字体、粗体、斜体、对齐、行距和固定文本工具。桌面原生字体下拉读取本机已安装字体，Android 使用可用字体列表。
-- 整笔划和局部擦除；套索选择；拖动、缩放、旋转、透明度、组合、锁定与前后层次。
-- 直线、箭头、矩形、椭圆、三角形；文本、便签、图片、链接与空表格。
-- 多页管理、页面书签、标题与标签、搜索文字对象及 PDF 提取文本、目录、跨笔记本复制或移动页面。
-- 空白、横线、方格、点阵、康奈尔、五线谱、计划表模板；图片背景、自定义模板。
-- 单页、连续滚动、双页、阅读、沉浸模式；左右手布局与底部工具栏。
-- PDF 页面批注、合并、页码重排；阅读模式文本选择；PDF 导出保留原 PDF 页面文字，并叠加批注。
-- PDF 导出范围与批注/背景选项、PNG、SVG 笔迹矢量导出、原始文件副本与 Markdown 索引。
-- 无外部 API、CDN 或在线识别服务；PDF 解析器、字符映射、字体与 WASM 资源随插件打包。
+Penbook is a usable first release, not a full replacement for Goodnotes.
 
-## 仍需后续完善
+- OCR, handwriting search, and handwriting-to-text are not included.
+- Auto Shape recognizes lines, arrows, rectangles, triangles, ellipses, and circles locally; complex or uncertain strokes remain unchanged. Scribble-to-erase, an advanced writing zoom window, and an infinite canvas are not implemented.
+- Flash cards, practice mode, and math recognition are not implemented.
+- Importing PDF bookmarks, interacting with links inside the original PDF, converting between standard PDF annotations and Penbook objects, and cropping PDF pages are not implemented.
+- Tables are drawn grids without editable cells. In SVG exports, non-stroke objects are embedded as images.
+- Goodnotes native files are not supported; export them as PDF before importing.
+- Processing and exporting large PDFs may use substantial memory. A single imported file is limited to 150 MB.
+- Cross-page editing and copying selections within the current notebook are supported. To move selections between notebooks, move or copy pages and merge them.
+- Latency, hover, side buttons, and palm rejection still need testing on a real S Pen Android device; desktop mouse testing is not a substitute.
 
-该版本是可用的第一版，并非 Goodnotes 的完整替代。
+Obsidian handles backup, sync, trash, and window management. Audio recording is out of scope.
 
-- OCR、手写搜索与手写转文本按当前要求暂缓。
-- Auto Shape 支持直线、箭头、矩形、三角形、椭圆和圆的本地识别；复杂或不确定的笔迹保留原样。涂抹删除、高级书写放大窗口、无限画布尚未实现。
-- 学习卡片、练习模式、数学识别尚未实现。
-- PDF 自带书签导入、原 PDF 内部链接交互、标准批注对象互转、裁切 PDF 页面尚未实现。
-- 表格目前为绘制网格，不支持单元格编辑；SVG 中除笔迹外的对象以图片保存。
-- Goodnotes 原生格式暂不支持；可以从 Goodnotes 导出 PDF 后导入。
-- 本版本 PDF 处理与导出较大的文档时可能占用较多内存；导入单文件限 150 MB。
-- 笔记本内跨页编辑与本视图选区复制可用，跨笔记本选区粘贴可通过移动/复制页面和合并完成。
-- 需要真实 S Pen Android 设备验证延迟、悬停、侧键与拒触，不能由桌面鼠标验证替代。
-
-备份同步、回收站、窗口管理由 Obsidian 负责；录音不在范围内。
-
-## 构建与安装
+## Build and install
 
 ```sh
 npm install
 npm run build
 ```
 
-成品位于 `release/penbook/`。将整个目录放进库的 `.obsidian/plugins/penbook/`，包括 `cmaps/`、`standard_fonts/` 与 `wasm/` 子目录；在 Obsidian 中启用插件。插件安装文件与笔记本可复制到 Android 库后使用。
+The built plugin is written to `release/penbook/`. Copy the entire folder into your vault at `.obsidian/plugins/penbook/`, including the `cmaps/`, `standard_fonts/`, and `wasm/` subdirectories, then enable Penbook in Obsidian. You can also copy the plugin and notebooks to an Android vault.
 
-## 格式与恢复
+## File format and recovery
 
-`format: "penbook"` 和 `version: 1` 是格式标识。每页保存纸张、背景引用、对象与文本索引；`resources` 保存 base64 图片和 PDF。解析失败或遇到未知版本时显示错误并保留原文件，不把错误内容覆盖成空笔记本。撤销历史仅驻留内存，关闭后不会保留；纸张模板与删除页面可通过当前会话撤销。
+`format: "penbook"` and `version: 1` identify the notebook format. Each page stores its paper, background reference, objects, and text index. The `resources` object stores images and PDFs as base64 data. If parsing fails or the file uses an unknown version, Penbook reports an error and preserves the original instead of replacing it with an empty notebook. Undo history is kept in memory for the current session; paper-template changes and page deletion can be undone before closing.
 
-笔记本修改后延迟写入文件，退出视图会执行保存。文件导出使用独立名称避免覆盖已有导出文件。文件没有加密；不应在多个设备同时编辑同一个尚未同步完成的文件。
+Notebook changes are written after a short delay, and closing the view saves pending edits. Exports use separate filenames to avoid overwriting existing files. Notebook files are not encrypted; avoid editing the same file on multiple devices before sync has finished.
 
 ## License
 
