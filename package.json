@@ -32,6 +32,11 @@
     "perfect-freehand": "^1.2.2",
     "polygon-clipping": "^0.15.7"
   },
+  "overrides": {
+    "obsidian": {
+      "moment": "^2.31.0"
+    }
+  },
   "devDependencies": {
     "@napi-rs/canvas": "^1.0.10",
     "@types/clipper-lib": "^6.4.0",
