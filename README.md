@@ -56,22 +56,6 @@ Default shortcuts include `P` for pen, `E` for eraser, `L` for lasso, `H` for ha
 - PDF export range and annotation/background options, PNG, SVG vector stroke export, original-file copies, and Markdown indexes.
 - No external APIs, CDNs, or online recognition services. The PDF parser, character maps, standard fonts, and WASM resources ship with the plugin.
 
-## Limitations
-
-Penbook is a usable first release, not a full replacement for Goodnotes.
-
-- OCR, handwriting search, and handwriting-to-text are not included.
-- Auto Shape recognizes lines, arrows, rectangles, triangles, ellipses, and circles locally; complex or uncertain strokes remain unchanged. Scribble-to-erase, an advanced writing zoom window, and an infinite canvas are not implemented.
-- Flash cards, practice mode, and math recognition are not implemented.
-- Importing PDF bookmarks, interacting with links inside the original PDF, converting between standard PDF annotations and Penbook objects, and cropping PDF pages are not implemented.
-- Tables are drawn grids without editable cells. In SVG exports, non-stroke objects are embedded as images.
-- Goodnotes native files are not supported; export them as PDF before importing.
-- Processing and exporting large PDFs may use substantial memory. A single imported file is limited to 150 MB.
-- Cross-page editing and copying selections within the current notebook are supported. To move selections between notebooks, move or copy pages and merge them.
-- Latency, hover, side buttons, and palm rejection still need testing on a real S Pen Android device; desktop mouse testing is not a substitute.
-
-Obsidian handles backup, sync, trash, and window management. Audio recording is out of scope.
-
 ## Build and install
 
 ```sh
