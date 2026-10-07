@@ -14,6 +14,8 @@ export interface Item {
   frozenInk?: [number,number][][];
   text?: string; font?: string; fontSize?: number; bold?: boolean; italic?: boolean;
   align?: CanvasTextAlign; resource?: string; target?: string; rows?: number; columns?: number;
+  cells?: string[][];
+  pdfAnnotationId?: string;
   crop?: { x: number; y: number; w: number; h: number };
   ink?:InkProfile; strokeStyle?:StrokeStyle; fill?:boolean; backgroundColor?:string; lineHeight?:number; resolved?:boolean; revealed?:boolean;
 }
@@ -22,8 +24,12 @@ export interface Page {
   color: string; spacing: number; items: Item[]; bookmark: boolean; tags: string[];
   background?: { resource: string; page?: number }; ocr: string; pdfText: string;
   locked?:boolean; outline?:string; backgroundRotation?:number;
+  backgroundCrop?:{x:number;y:number;w:number;h:number};
+  pdfLinks?:{x:number;y:number;w:number;h:number;page?:string;url?:string}[];
+  pdfBookmarks?:{title:string;level:number}[];
+  pdfAnnotationIds?:string[];
 }
-export interface Resource { type: 'pdf' | 'image'; name: string; mime: string; data: string }
+export interface Resource { type: 'pdf' | 'image'; name: string; mime: string; data: string; size?:number }
 export interface Notebook {
   format: 'penbook'; version: 1; title: string; cover: string; tags: string[];
   created: string; modified: string; pages: Page[]; resources: Record<string, Resource>;
@@ -45,11 +51,18 @@ export function parseBook(text: string): Notebook {
   for (const p of b.pages) {
     if (!p.id || !Number.isFinite(p.width) || !Number.isFinite(p.height) || p.width < 10 || p.height < 10 || p.width > 10000 || p.height > 10000 || !Array.isArray(p.items)) throw new Error('页面数据不完整，原文件未被修改。');
     p.ocr ??= ''; p.pdfText ??= ''; p.tags ??= []; p.spacing ??= 28;
+    if(p.backgroundCrop){const c=p.backgroundCrop;if(![c.x,c.y,c.w,c.h].every(Number.isFinite)||c.x<0||c.y<0||c.w<=0||c.h<=0||c.x+c.w>1.000001||c.y+c.h>1.000001)throw new Error('PDF 裁切数据不完整，原文件未被修改。');}
     for (const o of p.items) {
       if (!['stroke','shape','text','image','link','table','sticky','tape'].includes(o.kind) || ![o.x,o.y,o.w,o.h,o.bw,o.bh,o.rotation].every(Number.isFinite) || o.bw <= 0 || o.bh <= 0) throw new Error('对象数据不完整，原文件未被修改。');
       if (o.points && (!Array.isArray(o.points) || o.points.some((p: unknown) => !Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite)))) throw new Error('笔迹数据不完整。');
       if(o.eraseMasks&&(!Array.isArray(o.eraseMasks)||o.eraseMasks.some((polygon:unknown)=>!Array.isArray(polygon)||polygon.some((ring:unknown)=>!Array.isArray(ring)||ring.some((p:unknown)=>!Array.isArray(p)||p.length!==2||!p.every(Number.isFinite))))))throw new Error('擦除数据不完整。');
       if(o.frozenInk&&(!Array.isArray(o.frozenInk)||o.frozenInk.some((r:unknown)=>!Array.isArray(r)||r.some((p:unknown)=>!Array.isArray(p)||p.length!==2||!p.every(Number.isFinite)))))throw new Error('笔迹轮廓数据不完整。');
+      if(o.kind==='table'){
+        if(o.rows!==undefined&&(!Number.isInteger(o.rows)||o.rows<1||o.rows>50)||o.columns!==undefined&&(!Number.isInteger(o.columns)||o.columns<1||o.columns>30)||o.cells!==undefined&&(!Array.isArray(o.cells)||o.cells.some((row:unknown)=>!Array.isArray(row)||row.some((cell:unknown)=>typeof cell!=='string'))))throw new Error('表格数据不完整，原文件未被修改。');
+        const rows=Number.isFinite(o.rows)?Math.max(1,Math.min(50,Math.floor(o.rows))):4,columns=Number.isFinite(o.columns)?Math.max(1,Math.min(30,Math.floor(o.columns))):3;
+        o.rows=rows;o.columns=columns;
+        o.cells=Array.from({length:rows},(_,y)=>Array.from({length:columns},(_,x)=>typeof o.cells?.[y]?.[x]==='string'?o.cells[y][x]:''));
+      }
     }
   }
   return b;
@@ -82,8 +95,7 @@ export function inPolygon(x: number, y: number, polygon: Point[]): boolean {
   return inside;
 }
 export function encode(bytes: Uint8Array): string {
-  let out = ''; for (let i = 0; i < bytes.length; i += 32768) out += String.fromCharCode(...bytes.subarray(i, i + 32768));
-  return btoa(out);
+  const chunks:string[]=[];for(let i=0;i<bytes.length;i+=32766)chunks.push(btoa(String.fromCharCode(...bytes.subarray(i,i+32766))));return chunks.join('');
 }
-export function decode(s: string): Uint8Array { return Uint8Array.from(atob(s), c => c.charCodeAt(0)); }
+export function decode(s:string):Uint8Array{const bytes=new Uint8Array(s.length/4*3-(s.endsWith('==')?2:s.endsWith('=')?1:0));let offset=0;for(let i=0;i<s.length;i+=65536){const chunk=atob(s.slice(i,i+65536));for(let j=0;j<chunk.length;j++)bytes[offset++]=chunk.charCodeAt(j);}return bytes;}
 export function resourceUrl(r: Resource): string { return `data:${r.mime};base64,${r.data}`; }

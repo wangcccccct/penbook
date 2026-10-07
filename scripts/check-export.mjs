@@ -17,4 +17,4 @@ for(let i=1;i<=pdf.numPages;i++){
   if(count<100||x/count<65||x/count>300||y/count<160||y/count>215)throw new Error(`Page ${i}: annotation misplaced (${x/count},${y/count})`);
   console.log(`Page ${i}: text preserved, annotation centroid (${Math.round(x/count)}, ${Math.round(y/count)}), rotation ${page.rotate}`);
 }
-await pdf.destroy();
+await pdf.loadingTask.destroy();

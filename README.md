@@ -35,7 +35,7 @@ The toolbar has two rows: primary tools above and a rounded settings bar for the
 - Write with an S Pen or mouse. Touch pans by default, and two-finger gestures zoom. Finger writing can be enabled in the toolbar menu.
 - If the operating system reports the pen side button or eraser end through Pointer Events, Penbook temporarily switches to the eraser.
 - Use the lasso to select objects. Drag the selection to move it or its lower-right handle to resize it. The selection toolbar includes rotation, opacity, grouping, locking, layer order, and moving objects between pages.
-- Double-click text, sticky notes, or links to edit them. In reading mode, click a link to open its target.
+- Double-click text, sticky notes, links, or tables to edit them. The table editor supports cell contents and row/column counts. In reading or hand mode, click a native PDF link to follow it.
 - Choose a PDF from the vault, import one from the device, or drop it onto the canvas. Penbook creates a background for each page and stores the original PDF in the notebook.
 - Reorder pages by dragging them in the page list. Open page options with the context menu or, on touch devices, the menu in the upper-right corner.
 - Exports are saved in `手写笔记/导出/`; a Markdown index is saved beside the notebook.
@@ -52,12 +52,12 @@ Default shortcuts include `P` for pen, `E` for eraser, `L` for lasso, `H` for ha
 - Tape that hides and reveals strokes; laser-pointer dots and lines that fade one second after release; sticky-note colors and resolved state.
 - In-place text and sticky-note editing. Configure font size, font, bold, italic, alignment, line spacing, and fixed text mode. Desktop font menus read installed fonts locally; Android uses available font families.
 - Whole-stroke and partial erasing; lasso selection; move, resize, rotate, opacity, grouping, locking, and layer ordering.
-- Lines, arrows, rectangles, ellipses, and triangles, plus text, sticky notes, images, links, and blank tables.
+- Lines, arrows, rectangles, ellipses, and triangles, plus text, sticky notes, images, links, and editable tables. Copy or cut selections and paste them into another open notebook.
 - Multi-page management, bookmarks, titles, tags, search across text objects and extracted PDF text, a table of contents, and copying or moving pages between notebooks.
 - Blank, ruled, grid, dot, Cornell, music, planner, and task-list paper, plus image backgrounds and custom templates.
 - Single-page, continuous-scroll, and two-page layouts; reading and immersive modes; left- or right-handed layouts and a bottom toolbar.
-- PDF page annotation, merging, and reordering. Reading mode supports text selection. PDF export preserves original page text and overlays annotations.
-- PDF export range and annotation/background options, PNG, SVG vector stroke export, original-file copies, and Markdown indexes.
+- PDF page annotation, merging, reordering, and cropping. Imported bookmarks appear in the table of contents; native internal links follow the corresponding pages. Reading mode supports text selection. Common standard PDF annotations become editable Penbook objects; PDF export writes standard annotation objects and preserves original searchable page text. An embedded annotation archive retains Penbook-specific object details for reimport.
+- PDF export range and annotation/background options, PNG, SVG with vector strokes, shapes, text, tables, and tape, original-file copies, and Markdown indexes. Images and page backgrounds retain their image representation in SVG.
 - No external APIs, CDNs, or online recognition services. The PDF parser, character maps, standard fonts, and WASM resources ship with the plugin.
 
 ## Build and install
@@ -71,7 +71,7 @@ The built plugin is written to `release/penbook/`. Copy the entire folder into y
 
 ## File format and recovery
 
-`format: "penbook"` and `version: 1` identify the notebook format. Each page stores its paper, background reference, objects, and text index. The `resources` object stores images and PDFs as base64 data. If parsing fails or the file uses an unknown version, Penbook reports an error and preserves the original instead of replacing it with an empty notebook. Undo history is kept in memory for the current session; paper-template changes and page deletion can be undone before closing.
+`format: "penbook"` and `version: 1` identify the notebook format. Each page stores its paper, background reference, objects, and text index. The `resources` object stores complete images and PDFs as base64 data, including large PDFs; reopening and exporting a notebook do not require the original source file. There is no fixed 150 MB import cutoff. PDF encoding uses chunks, document and render caches have budgets, and export shares source resources across pages. If parsing fails or the file uses an unknown version, Penbook reports an error and preserves the original instead of replacing it with an empty notebook. Undo history is kept in memory for the current session; paper-template changes and page deletion can be undone before closing.
 
 Notebook changes are written after a short delay, and closing the view saves pending edits. Exports use separate filenames to avoid overwriting existing files. Notebook files are not encrypted; avoid editing the same file on multiple devices before sync has finished.
 

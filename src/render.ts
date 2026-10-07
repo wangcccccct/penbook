@@ -2,6 +2,7 @@ import { getStroke } from 'perfect-freehand';
 import { Item, Page, Notebook, resourceUrl } from './model';
 import { erasureClipPath } from './erase';
 import { BudgetCache } from './resources';
+import { tableSize, wrapText } from './table';
 
 export class Renderer {
   private outlines=new BudgetCache<Item,{points:Item['points'];key:string;outline:number[][]}>(24*1024*1024);
@@ -99,7 +100,12 @@ export class Renderer {
       ctx.stroke();
     } else if(o.kind==='tape'){ctx.globalAlpha*=o.revealed?.16:1;if(o.points){const pts=getStroke(o.points,{size:o.width??24,thinning:0,simulatePressure:false});if(pts.length){ctx.beginPath();ctx.moveTo(pts[0][0],pts[0][1]);for(const p of pts.slice(1))ctx.lineTo(p[0],p[1]);ctx.closePath();ctx.fill();}}else ctx.fillRect(0,0,w,h);
     } else if(o.kind==='table') {
-      const rows=o.rows??4,cols=o.columns??3; ctx.beginPath(); for(let i=0;i<=rows;i++){ ctx.moveTo(0,h*i/rows);ctx.lineTo(w,h*i/rows); } for(let i=0;i<=cols;i++){ctx.moveTo(w*i/cols,0);ctx.lineTo(w*i/cols,h);} ctx.stroke();
+      const {rows,columns:cols}=tableSize(o);ctx.beginPath();for(let i=0;i<=rows;i++){ctx.moveTo(0,h*i/rows);ctx.lineTo(w,h*i/rows);}for(let i=0;i<=cols;i++){ctx.moveTo(w*i/cols,0);ctx.lineTo(w*i/cols,h);}ctx.stroke();
+      const size=o.fontSize??16,cw=w/cols,ch=h/rows;ctx.font=`${size}px ${o.font??'sans-serif'}`;ctx.textBaseline='top';ctx.textAlign='left';
+      for(let r=0;r<rows;r++)for(let c=0;c<cols;c++){
+        ctx.save();ctx.beginPath();ctx.rect(c*cw+3,r*ch+3,Math.max(0,cw-6),Math.max(0,ch-6));ctx.clip();
+        wrapText(o.cells?.[r]?.[c]??'',Math.max(1,cw-12),text=>ctx.measureText(text).width).forEach((line,i)=>ctx.fillText(line,c*cw+6,r*ch+6+i*size*1.25));ctx.restore();
+      }
     } else {
       if(o.kind==='sticky') { ctx.fillStyle=o.backgroundColor??'#fff2a8';ctx.fillRect(0,0,w,h);ctx.fillStyle=o.color; }
       ctx.beginPath();ctx.rect(0,0,w,h);ctx.clip();

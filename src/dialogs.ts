@@ -1,4 +1,6 @@
 import { App, Modal, Setting, FuzzySuggestModal, TFile } from 'obsidian';
+import { Item } from './model';
+import { tableCells, tableSize } from './table';
 let closePopover:(()=>void)|undefined;
 let popoverAnchor:HTMLElement|undefined;
 const anchorKey=(el:HTMLElement)=>el.dataset.pbPopoverKey??el.getAttribute('aria-label');
@@ -113,5 +115,30 @@ export async function localFile(accept:string):Promise<File|null>{
   return new Promise(resolve=>{
     const input=document.createElement('input');input.type='file';input.accept=accept;
     input.onchange=()=>resolve(input.files?.[0]??null);input.addEventListener('cancel',()=>resolve(null));input.click();
+  });
+}
+
+export function editTable(app:App,table:Item,cell?:[number,number]):Promise<Pick<Item,'rows'|'columns'|'cells'>|null>{
+  return new Promise(resolve=>{
+    class TableDialog extends Modal {
+      result:Pick<Item,'rows'|'columns'|'cells'>|null=null;
+      rows=tableSize(table).rows;columns=tableSize(table).columns;cells=tableCells(table);
+      onOpen(){
+        this.titleEl.setText('编辑表格');this.modalEl.addClass('pb-table-dialog');
+        const controls=this.contentEl.createDiv(),grid=this.contentEl.createDiv('pb-table-grid');
+        const draw=()=>{
+          grid.empty();const tbody=grid.createEl('table').createEl('tbody');
+          for(let r=0;r<this.rows;r++){const tr=tbody.createEl('tr');for(let c=0;c<this.columns;c++){
+            const input=tr.createEl('td').createEl('textarea',{attr:{'aria-label':`第 ${r+1} 行，第 ${c+1} 列`,rows:'2'}});input.value=this.cells[r]?.[c]??'';
+            input.oninput=()=>{this.cells[r]??=[];this.cells[r][c]=input.value;};
+            if(cell?.[0]===r&&cell?.[1]===c)requestAnimationFrame(()=>input.focus());
+          }}
+        };
+        for(const [key,label,max]of [['rows','行数',50],['columns','列数',30]]as const)new Setting(controls).setName(label).addText(t=>{t.inputEl.type='number';t.inputEl.min='1';t.inputEl.max=String(max);t.setValue(String(this[key])).onChange(v=>{const n=Number(v);if(Number.isInteger(n)&&n>=1&&n<=max){this[key]=n;draw();}});});
+        draw();new Setting(this.contentEl).addButton(b=>b.setButtonText('取消').onClick(()=>this.close())).addButton(b=>b.setButtonText('保存').setCta().onClick(()=>{this.result={rows:this.rows,columns:this.columns,cells:tableCells({...table,cells:this.cells},this.rows,this.columns)};this.close();}));
+      }
+      onClose(){resolve(this.result);this.contentEl.empty();}
+    }
+    new TableDialog(app).open();
   });
 }

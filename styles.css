@@ -143,3 +143,11 @@
 .pb-popover .pb-slider-setting{padding:7px 0}
 .pb-popover .pb-section-title{margin:10px 8px 5px}
 .pb-popover .pb-settings-group{margin-bottom:6px}
+.pb-table-dialog{width:min(90vw,1000px)}
+.pb-table-grid{max-height:60vh;overflow:auto}
+.pb-table-grid table{border-collapse:collapse;width:100%}
+.pb-table-grid td{border:1px solid var(--background-modifier-border);padding:3px;min-width:110px}
+.pb-table-grid textarea{width:100%;min-width:100px;resize:vertical}
+.pb-text-layer{overflow:hidden}
+.pb-text-layer a{position:absolute;display:block;pointer-events:auto;cursor:pointer}
+.pb-text-layer a:hover{background:var(--text-accent);opacity:.15}

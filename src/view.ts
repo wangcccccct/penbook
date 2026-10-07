@@ -1,9 +1,10 @@
 import { TextFileView, WorkspaceLeaf, Notice, Menu, TFile, normalizePath, Setting, Scope } from 'obsidian';
 import PenbookPlugin, { PAPERS } from './main';
-import { Notebook, Page, Item, Point, Pen, Shape, Paper, InkProfile, DEFAULT_INK, uid, clone, newBook, newPage, parseBook, item, stroke, contains, localPoint, inPolygon, encode, decode, resourceUrl } from './model';
+import { Notebook, Page, Item, Point, Pen, Shape, Paper, InkProfile, Resource, DEFAULT_INK, uid, clone, newBook, newPage, parseBook, item, stroke, contains, localPoint, inPolygon, encode, decode, resourceUrl } from './model';
 import { Renderer } from './render';
 import { PDFs } from './pdf';
-import { form, pickFile, localFile, confirmAction, sizeControl, sizeDialog, popover, rememberAnchor, toolAnchor, dismissPopoverFor } from './dialogs';
+import { copyPages } from './page-transfer';
+import { form, pickFile, localFile, confirmAction, sizeControl, sizeDialog, popover, rememberAnchor, toolAnchor, dismissPopoverFor, editTable } from './dialogs';
 import { icon, pathIcon, dropdownIcon, PEN_ICONS, SHAPE_ICONS, ERASER_ICONS, SELECT_ALL_ICON, LASER_ICON, UI_ICONS, ICONS, actionIcon } from './icons';
 import { panelHeader, section, row, toggle, slider, cards, segments } from './panels';
 import { inkPalette } from './palette';
@@ -11,12 +12,15 @@ import { templatePicker } from './templates';
 import { calculate } from './calculate';
 import { recognizeShape } from './auto-shape';
 import { fontSelect } from './fonts';
-import { erasureClipPath } from './erase';
+import { itemSvg } from './svg-export';
 import { BackgroundEraser } from './erase-background';
 import { SnapshotStore, Snapshot, historyWeight } from './history';
 import { extendLaserTrail } from './laser';
 import { SHORTCUTS, ShortcutAction, EDIT_ACTIONS, SELECTION_ACTIONS, shortcutAction, shortcutHint } from './shortcuts';
 import { pageAtOffset } from './page-navigation';
+import { SelectionClipboard, selectionClipboard, pasteItems } from './selection-clipboard';
+import { importPdfPages } from './pdf-import';
+import { cropPage, rotateCrop } from './page-crop';
 
 export const VIEW_TYPE='penbook-view';
 const AUTO_SHAPE_MOVE_THRESHOLD=8;
@@ -31,7 +35,9 @@ export class PenbookView extends TextFileView {
   renderer=new Renderer();pdfs:PDFs;surfaces:Surface[]=[];
   tool:Tool='pen';pen:Pen='fountain';shape:Shape='rectangle';color:string;width:number;eraserSize=22;
   zoom=0.8;layout:'single'|'continuous'|'spread'='continuous';reading=false;fingerInk=false;selection=new Set<string>();
-  undoStack:Snapshot[]=[];redoStack:Snapshot[]=[];gesture?:Gesture;clipboard:{items:Item[];resources:Notebook['resources']}|null=null;
+  undoStack:Snapshot[]=[];redoStack:Snapshot[]=[];gesture?:Gesture;
+  get clipboard(){return this.plugin.selectionClipboard;}
+  set clipboard(value:SelectionClipboard|null){this.plugin.selectionClipboard=value;}
   touches=new Map<number,{x:number;y:number}>();pinch?:{distance:number;zoom:number;cx:number;cy:number};lastPen=0;
   renderEpoch=0;thumbEpoch=0;closed=false;sidebarQuery='';penButtons=new Map<Tool,HTMLButtonElement>();resizeObserver?:ResizeObserver;
   private saveTimer?:number;private dirty=false;private saving:Promise<void>=Promise.resolve();
@@ -91,7 +97,7 @@ export class PenbookView extends TextFileView {
     this.resizeObserver=new ResizeObserver(()=>{if(this.zoom<=0)this.fit();this.updateToolbarEdges();});this.resizeObserver.observe(this.contentEl);
     this.register(()=>this.resizeObserver?.disconnect());
   }
-  async onClose(){rememberAnchor(null);if(this.laserFrame!==undefined)cancelAnimationFrame(this.laserFrame);this.laserFrame=undefined;this.laserTrail=undefined;await this.savePendingEdits();this.releaseSurfaces();this.thumbsController?.abort();this.undoStack=[];this.redoStack=[];this.snapshots.clear();this.clipboard=null;this.thumbPainters.clear();this.pageCards.clear();this.sidebarItems.clear();this.pendingThumbs.clear();this.uiTheme=undefined;this.backgroundEraser.stop();this.closed=true;this.renderEpoch++;this.thumbEpoch++;this.pageObservers.forEach(o=>o.disconnect());this.thumbObservers.forEach(o=>o.disconnect());await this.pdfs.clear();this.renderer.clear();}
+  async onClose(){rememberAnchor(null);if(this.laserFrame!==undefined)cancelAnimationFrame(this.laserFrame);this.laserFrame=undefined;this.laserTrail=undefined;await this.savePendingEdits();this.releaseSurfaces();this.thumbsController?.abort();this.undoStack=[];this.redoStack=[];this.snapshots.clear();this.thumbPainters.clear();this.pageCards.clear();this.sidebarItems.clear();this.pendingThumbs.clear();this.uiTheme=undefined;this.backgroundEraser.stop();this.closed=true;this.renderEpoch++;this.thumbEpoch++;this.pageObservers.forEach(o=>o.disconnect());this.thumbObservers.forEach(o=>o.disconnect());await this.pdfs.clear();this.renderer.clear();}
   async onUnloadFile(file:TFile){await this.savePendingEdits();await super.onUnloadFile(file);}
   private async savePendingEdits(){this.inlineEditor?.finish(true);await this.finishGesture(true);await this.flush();}
   private async run(fn:()=>void|Promise<void>){try{await fn();}catch(error){if(error instanceof Error&&['AbortError','RenderingCancelledException'].includes(error.name))return;console.error('Penbook',error);new Notice(`Penbook：${error instanceof Error?error.message:String(error)}`);}}
@@ -265,8 +271,10 @@ export class PenbookView extends TextFileView {
       if(p.id===this.page.id||this.layout!=='continuous')paint();
       if(observer){loaders.set(sheet,{surface:s,paint});observer.observe(sheet);}
       ui.addEventListener('pointerdown',e=>this.pointerDown(e,s));ui.addEventListener('pointermove',e=>this.pointerMove(e,s));ui.addEventListener('pointerup',e=>this.pointerUp(e));ui.addEventListener('pointercancel',e=>this.pointerCancel(e));ui.addEventListener('pointerleave',()=>{if(!this.gesture){this.hover=undefined;this.paintUI(s);}});ui.addEventListener('lostpointercapture',e=>{if(this.gesture?.pointer===e.pointerId&&!this.gesture.ending)this.finishGesture(false);});
-      ui.addEventListener('contextmenu',e=>{e.preventDefault();this.pageMenu(e);});ui.addEventListener('dblclick',e=>{if(this.reading)return;const pt=this.point(e,s),o=[...p.items].reverse().find(o=>contains(o,pt[0],pt[1]));if(o)void this.run(()=>this.editItem(o));});
-      ui.addEventListener('click',e=>{if(this.inlineEditor){e.stopPropagation();queueMicrotask(()=>document.querySelector<HTMLElement>('.pb-inline-text')?.focus({preventScroll:true}));}});
+      ui.addEventListener('contextmenu',e=>{e.preventDefault();this.pageMenu(e);});ui.addEventListener('dblclick',e=>{if(this.reading)return;const pt=this.point(e,s),o=[...p.items].reverse().find(o=>contains(o,pt[0],pt[1]));if(o)void this.run(()=>this.editItem(o,pt));});
+      let press:{x:number;y:number}|undefined;
+      ui.addEventListener('pointerdown',e=>press={x:e.clientX,y:e.clientY});
+      ui.addEventListener('click',e=>{if(this.inlineEditor){e.stopPropagation();queueMicrotask(()=>document.querySelector<HTMLElement>('.pb-inline-text')?.focus({preventScroll:true}));return;}if(press&&(this.reading||this.tool==='hand')&&Math.hypot(e.clientX-press.x,e.clientY-press.y)<6){const point=this.point(e,s),link=p.pdfLinks?.find(l=>point[0]>=l.x&&point[0]<=l.x+l.w&&point[1]>=l.y&&point[1]<=l.y+l.h);if(link)void this.run(()=>link.page?Promise.resolve(this.goToId(link.page)):this.openLink(link.url??''));}});
       text.addEventListener('pointerdown',()=>{this.index=this.book.pages.indexOf(p);});
     }
     this.queuePageTracking();
@@ -287,11 +295,13 @@ export class PenbookView extends TextFileView {
     const bg=s.page.background!;await this.pdfs.withDocument(bg.resource,this.book,async pdf=>{const page=await pdf.getPage((bg.page??0)+1),vp=page.getViewport({scale:1,rotation:(page.rotate+(s.page.backgroundRotation??0))%360}),content=await page.getTextContent();if(s.epoch!==this.renderEpoch||!s.visible||s.controller?.signal.aborted)return;
     s.text.empty();
     const measure=document.createElement('canvas').getContext('2d')!;
+    const crop=s.page.backgroundCrop??{x:0,y:0,w:1,h:1},scaleX=s.page.width/(vp.width*crop.w),scaleY=s.page.height/(vp.height*crop.h);
     for(const t of content.items){if(!('str'in t)||!t.str)continue;const m=vp.transform,a=t.transform;
       const tx=m[0]*a[4]+m[2]*a[5]+m[4],ty=m[1]*a[4]+m[3]*a[5]+m[5];const height=Math.hypot(a[2],a[3]);
-      const span=s.text.createEl('span',{text:t.str});span.style.left=`${tx*s.page.width/vp.width*this.zoom}px`;span.style.top=`${(ty-height)*s.page.height/vp.height*this.zoom}px`;span.style.fontSize=`${height*this.zoom*s.page.height/vp.height}px`;
-      span.style.fontFamily=content.styles[t.fontName]?.fontFamily??'sans-serif';measure.font=`${height}px ${span.style.fontFamily}`;const width=measure.measureText(t.str).width;if(width)span.style.transform=`scaleX(${t.width/width})`;
+      const span=s.text.createEl('span',{text:t.str});span.style.left=`${(tx-crop.x*vp.width)*scaleX*this.zoom}px`;span.style.top=`${(ty-height-crop.y*vp.height)*scaleY*this.zoom}px`;span.style.fontSize=`${height*this.zoom*scaleY}px`;
+      span.style.fontFamily=content.styles[t.fontName]?.fontFamily??'sans-serif';measure.font=`${height}px ${span.style.fontFamily}`;const width=measure.measureText(t.str).width;if(width)span.style.transform=`scaleX(${t.width/width*scaleX/scaleY})`;
     }
+    for(const link of s.page.pdfLinks??[]){const a=s.text.createEl('a',{attr:{href:link.url??'#','aria-label':link.page?'跳转到 PDF 页面':link.url??'PDF 链接'}});a.style.left=`${link.x*this.zoom}px`;a.style.top=`${link.y*this.zoom}px`;a.style.width=`${link.w*this.zoom}px`;a.style.height=`${link.h*this.zoom}px`;a.onclick=e=>{e.preventDefault();e.stopPropagation();this.activate(s);void this.run(()=>link.page?Promise.resolve(this.goToId(link.page)):this.openLink(link.url??''));};}
     // Put selectable text above the pointer canvas only in reading mode.
     s.text.style.zIndex='5';
     });
@@ -529,8 +539,8 @@ export class PenbookView extends TextFileView {
     this.button(this.selectionBar,'移至页面','移动或复制选区到其他页',()=>this.transferObjects());
     if(objects.every(o=>o.kind==='sticky'))this.button(this.selectionBar,'解决便签','标记或取消已解决',()=>mutate(()=>objects.forEach(o=>o.resolved=!o.resolved)));
   }
-  private copySelection(objects=this.page.items.filter(o=>this.selection.has(o.id)),notify=true){if(!objects.length)return;const resources:Notebook['resources']={};for(const o of objects)if(o.resource)resources[o.resource]=clone(this.book.resources[o.resource]);this.clipboard={items:clone(objects),resources};if(notify)new Notice('选区已复制，可在此笔记本粘贴。');}
-  private pasteSelection(){if(!this.clipboard)return;const before=this.snapshot();const copied=clone(this.clipboard.items),groups=new Map<string,string>();for(const o of copied){o.id=uid();o.x+=20;o.y+=20;o.locked=false;if(o.group){if(!groups.has(o.group))groups.set(o.group,uid());o.group=groups.get(o.group);}}Object.assign(this.book.resources,clone(this.clipboard.resources));this.page.items.push(...copied);this.selection=new Set(copied.map(o=>o.id));this.tool='lasso';this.changed(before);this.repaint();this.drawSidebar();this.drawToolbar();}
+  private copySelection(objects=this.page.items.filter(o=>this.selection.has(o.id)),notify=true){if(!objects.length)return;this.clipboard=selectionClipboard(objects,this.book);if(notify)new Notice('选区已复制，可切换到其他 Penbook 笔记本粘贴。');}
+  private pasteSelection(){if(!this.clipboard)return;const before=this.snapshot(),copied=pasteItems(this.clipboard,this.book);this.page.items.push(...copied);this.selection=new Set(copied.map(o=>o.id));this.tool='lasso';this.changed(before);this.repaint();this.drawSidebar();this.drawToolbar();}
   private async transform(){const objects=this.page.items.filter(o=>this.selection.has(o.id)&&!o.locked);if(!objects.length)return;
     const v=await form(this.app,'变换选区',[{key:'rotate',name:'旋转角度（增量）',value:'0',type:'number'},{key:'scale',name:'缩放比例 %',value:'100',type:'number'},{key:'opacity',name:'透明度 %',value:String(Math.round(objects[0].opacity*100)),type:'number'}]);if(!v)return;
     const rotation=Number(v.rotate),scale=Number(v.scale)/100,opacity=Number(v.opacity)/100;if(!Number.isFinite(rotation)||!Number.isFinite(scale)||scale<.05||scale>20||!Number.isFinite(opacity)){new Notice('请输入有效的变换参数');return;}
@@ -550,7 +560,12 @@ export class PenbookView extends TextFileView {
     else{const v=await form(this.app,'插入链接',[{key:'text',name:'内容',value:''},{key:'target',name:'笔记路径、页面链接或 URL',value:''}]);if(!v||!v.text.trim())return;const{pinned,...style}=this.textStyle;o={...item('link',p[0],p[1],Math.min(320,Math.max(100,this.page.width-p[0]-20)),60,this.color),...style,text:v.text,target:v.target};}
     const before=this.snapshot();this.page.items.push(o);this.selection=new Set([o.id]);this.changed(before);this.setTool('lasso');this.repaint();this.drawSidebar();
   }
-  private async editItem(o:Item){
+  private async editItem(o:Item,point?:Point){
+    if(o.kind==='table'){
+      if(o.locked||this.page.locked){new Notice('请先解锁对象或页面');return;}
+      const p=point&&localPoint(o,point[0],point[1]),cell=p?[Math.min((o.rows??4)-1,Math.max(0,Math.floor(p[1]/o.bh*(o.rows??4)))),Math.min((o.columns??3)-1,Math.max(0,Math.floor(p[0]/o.bw*(o.columns??3))))]as[number,number]:undefined;
+      const value=await editTable(this.app,o,cell);if(value){const before=this.snapshot();Object.assign(o,value);this.changed(before);this.repaint();this.drawSidebar();}return;
+    }
     if(o.locked||this.page.locked){new Notice('请先解锁对象或页面');return;}if(!['text','sticky','link'].includes(o.kind))return this.transform();
     this.selection=new Set([o.id]);this.textStyle={...this.textStyle,fontSize:o.fontSize??22,font:o.font??'sans-serif',bold:o.bold??false,italic:o.italic??false,align:o.align??'left',lineHeight:o.lineHeight??1.4};this.setTool('text');rememberAnchor(this.penButtons.get('text')??null);
     this.inlineText(o,text=>{const before=this.snapshot();o.text=text;this.changed(before);this.repaint();this.drawSidebar();});
@@ -642,10 +657,11 @@ export class PenbookView extends TextFileView {
   private addPage(){const before=this.snapshot();const p=newPage(this.page.paper);p.width=this.page.width;p.height=this.page.height;p.color=this.page.color;p.spacing=this.page.spacing;this.book.pages.splice(this.index+1,0,p);this.index++;this.selection.clear();this.changed(before);this.render();}
   private pageMenu(e?:MouseEvent){const menu=new Menu();const add=(title:string,fn:()=>void|Promise<void>)=>menu.addItem(i=>i.setTitle(title).setIcon(`pb-${actionIcon(title)}`).onClick(()=>void this.run(fn)));
     add('页面设置、标题与标签',()=>this.pageProperties());add(this.page.bookmark?'取消书签':'添加书签',()=>{const before=this.snapshot();this.page.bookmark=!this.page.bookmark;this.changed(before);this.drawSidebar();});
-    add('复制页面',()=>{const before=this.snapshot(),p=clone(this.page);p.id=uid();p.items.forEach(o=>o.id=uid());this.book.pages.splice(this.index+1,0,p);this.index++;this.changed(before);this.render();});
+    add('复制页面',()=>this.copyPage());
     add('插入空白页面',()=>this.addPage());add('移动至页码…',()=>this.movePage());add('复制到其他笔记本…',()=>this.transferPage(false));add('移动到其他笔记本…',()=>this.transferPage(true));
     add('复制页面链接',()=>this.copyLink());add('将此页设为纸张模板',()=>this.saveTemplate());add('更换图片背景',()=>this.importImageBackground());
     if(this.page.background)add('移除背景（可撤销）',()=>{const before=this.snapshot();delete this.page.background;this.changed(before);this.drawPages();this.drawSidebar();});
+    if(this.page.background&&this.book.resources[this.page.background.resource]?.type==='pdf')add('裁切 PDF 页面…',()=>this.cropPdfPage());
     add('清空页面内容…',()=>this.clearPage());add('删除页面…',()=>this.deletePage());if(e)menu.showAtMouseEvent(e);else this.showMenu(menu);
   }
   private moreMenu(){const anchor=toolAnchor()??this.toolbarRight;popover(anchor,(panel,close)=>{panel.addClass('pb-more-panel');panelHeader(panel,'更多',close);const g=section(panel),pageRow=g.createDiv('pb-page-summary');pageRow.createEl('strong',{text:`页面 ${this.index+1}`});const thumb=pageRow.createEl('canvas');thumb.width=36;thumb.height=48;const ctx=thumb.getContext('2d')!;ctx.scale(36/this.page.width,48/this.page.height);this.renderer.paper(ctx,this.page);
@@ -658,8 +674,13 @@ export class PenbookView extends TextFileView {
     new Setting(settings).setName('滚动方向').addDropdown(d=>d.addOptions({vertical:'垂直',horizontal:'水平'}).setValue(this.plugin.settings.scrollDirection).onChange(v=>{this.plugin.settings.scrollDirection=v as 'vertical'|'horizontal';void this.plugin.saveSettings();this.layout='continuous';this.drawPages();this.drawFooter();}));new Setting(settings).setName('边栏').addDropdown(d=>d.addOptions({left:'左边',right:'右边'}).setValue(this.plugin.settings.leftHanded?'right':'left').onChange(v=>{this.plugin.settings.leftHanded=v==='right';this.root.toggleClass('pb-left',v==='right');void this.plugin.saveSettings();}));row(settings,'触控笔和防误触',()=>this.inputPanel(anchor),'','pen');
     const extra=section(panel,'笔记本');row(extra,'笔记本属性',act(()=>this.bookProperties()),'','notebook');row(extra,'页面设置',act(()=>this.pageProperties()),'','settings');row(extra,'导入 PDF、图片或模板',act(()=>this.importMenu()),'','import');row(extra,'更多页面操作',act(()=>this.pageMenu()));row(extra,'将文本笔记插入页面',act(()=>this.insertMarkdown()),'','text');row(extra,'保存 Markdown 索引',act(()=>this.exportIndex()),'','file');
   });}
-  private copyPage(){const before=this.snapshot(),p=clone(this.page);p.id=uid();p.items.forEach(o=>o.id=uid());this.book.pages.splice(this.index+1,0,p);this.index++;this.changed(before);this.render();}
-  private rotatePage(){if(this.page.locked)return;const before=this.snapshot(),p=this.page,oldHeight=p.height;for(const o of p.items){const x=o.x+o.w/2,y=o.y+o.h/2;o.x=oldHeight-y-o.w/2;o.y=x-o.h/2;o.rotation=(o.rotation+90)%360;}[p.width,p.height]=[p.height,p.width];p.backgroundRotation=((p.backgroundRotation??0)+90)%360;this.changed(before);this.render();}
+  private copyPage(){const before=this.snapshot(),[p]=copyPages([this.page],this.book,this.book);this.book.pages.splice(this.index+1,0,p);this.index++;this.changed(before);this.render();}
+  private rotatePage(){if(this.page.locked)return;const before=this.snapshot(),p=this.page,oldHeight=p.height;rotateCrop(p);for(const o of p.items){const x=o.x+o.w/2,y=o.y+o.h/2;o.x=oldHeight-y-o.w/2;o.y=x-o.h/2;o.rotation=(o.rotation+90)%360;}[p.width,p.height]=[p.height,p.width];p.backgroundRotation=((p.backgroundRotation??0)+90)%360;this.changed(before);this.render();}
+  private async cropPdfPage(){
+    if(this.page.locked){new Notice('请先解锁页面');return;}
+    const p=this.page,value=await form(this.app,'裁切 PDF 页面',[{key:'left',name:'左侧裁去（px）',value:'0',type:'number'},{key:'top',name:'上方裁去（px）',value:'0',type:'number'},{key:'right',name:'右侧裁去（px）',value:'0',type:'number'},{key:'bottom',name:'下方裁去（px）',value:'0',type:'number'}]);if(!value)return;
+    const left=Number(value.left),top=Number(value.top),right=Number(value.right),bottom=Number(value.bottom);if(right<0||bottom<0)throw new Error('裁切边距不能为负数');const before=this.snapshot();cropPage(p,left,top,p.width-left-right,p.height-top-bottom);this.selection.clear();this.changed(before);this.render();
+  }
   private removeItems(anchor:HTMLElement){popover(anchor,(panel,close)=>{panelHeader(panel,'删除特定项目',close);const kinds=new Set<Item['kind']>();const g=section(panel);for(const[kind,name]of[['stroke','笔迹'],['text','文本'],['shape','图形'],['image','图片'],['sticky','便签'],['tape','胶带'],['link','链接'],['table','表格']]as[Item['kind'],string][])toggle(g,name,false,v=>v?kinds.add(kind):kinds.delete(kind));new Setting(panel).addButton(b=>b.setButtonText('删除选定类型').setWarning().onClick(async()=>{close();if(!kinds.size||this.page.locked||!await confirmAction(this.app,'删除特定项目','删除选定类型的未锁定对象？可撤销。','删除'))return;const before=this.snapshot();this.page.items=this.page.items.filter(o=>o.locked||!kinds.has(o.kind));this.changed(before);this.repaint();this.drawSidebar();}));});}
   private inputPanel(anchor:HTMLElement){popover(anchor,(panel,close)=>{panelHeader(panel,'触控笔和防误触',close);const g=section(panel);toggle(g,'启用 S Pen',this.plugin.settings.penEnabled,v=>{this.plugin.settings.penEnabled=v;void this.plugin.saveSettings();});toggle(g,'允许手指书写',this.fingerInk,v=>{this.fingerInk=v;this.plugin.settings.fingerInk=v;void this.plugin.saveSettings();});toggle(g,'左手布局',this.plugin.settings.leftHanded,v=>{this.plugin.settings.leftHanded=v;this.root.toggleClass('pb-left',v);void this.plugin.saveSettings();});panel.createEl('p',{cls:'pb-panel-note',text:'关闭手指书写时，手指负责平移和双指缩放。笔输入后短时间内忽略触摸，以减少掌心误触。'});});}
   private async bookProperties(){const v=await form(this.app,'笔记本属性',[{key:'title',name:'标题',value:this.book.title},{key:'tags',name:'标签（逗号分隔）',value:this.book.tags.join(', ')},{key:'cover',name:'封面颜色',value:this.book.cover,type:'color'}]);if(!v)return;const before=this.snapshot();this.book.title=v.title.trim()||this.book.title;this.book.tags=v.tags.split(/[,，]/).map(s=>s.trim()).filter(Boolean);this.book.cover=v.cover;this.changed(before);this.drawToolbar();}
@@ -667,17 +688,18 @@ export class PenbookView extends TextFileView {
     const p=this.page;const v=await form(this.app,'页面设置',[{key:'title',name:'标题',value:p.title},{key:'tags',name:'标签（逗号分隔）',value:p.tags.join(', ')},{key:'paper',name:'纸张',value:p.paper,options:PAPERS},{key:'color',name:'纸张颜色',value:p.color,type:'color'},{key:'width',name:'宽度',value:String(p.width),type:'number'},{key:'height',name:'高度',value:String(p.height),type:'number'},{key:'spacing',name:'格线间距',value:String(p.spacing),type:'number'},{key:'apply',name:'应用纸张样式',value:'page',options:{page:'仅当前页',all:'所有非 PDF 页面'}}]);if(!v)return;
     const w=Number(v.width),h=Number(v.height);if(![w,h].every(n=>Number.isFinite(n)&&n>=100&&n<=4000)){new Notice('页面宽高应在 100 至 4000 之间');return;}
     const before=this.snapshot();p.title=v.title;p.tags=v.tags.split(/[,，]/).map(s=>s.trim()).filter(Boolean);
-    const targets=v.apply==='all'?this.book.pages.filter(p=>!p.background):[p];for(const target of targets){target.paper=v.paper as Paper;target.color=v.color;target.width=w;target.height=h;target.spacing=Math.max(8,Math.min(200,Number(v.spacing)||28));}this.changed(before);this.render();
+    const targets=v.apply==='all'?this.book.pages.filter(p=>!p.background):[p];for(const target of targets){for(const link of target.pdfLinks??[]){link.x*=w/target.width;link.w*=w/target.width;link.y*=h/target.height;link.h*=h/target.height;}target.paper=v.paper as Paper;target.color=v.color;target.width=w;target.height=h;target.spacing=Math.max(8,Math.min(200,Number(v.spacing)||28));}this.changed(before);this.render();
   }
-  private async contents(){const options:Record<string,string>={};this.book.pages.forEach((p,i)=>options[p.id]=`${p.bookmark?'书签 · ':''}${i+1}. ${p.title||'未命名页面'}`);const v=await form(this.app,'目录与书签',[{key:'page',name:'跳转页面',value:this.page.id,options}]);if(v)this.goToId(v.page);}
+  private async contents(){const options:Record<string,string>={};this.book.pages.forEach((p,i)=>{options[p.id]=`${p.bookmark?'书签 · ':''}${i+1}. ${p.title||'未命名页面'}`;p.pdfBookmarks?.forEach((b,j)=>options[`${p.id}#${j}`]=`${'　'.repeat(Math.min(b.level,8))}${b.title} · 第 ${i+1} 页`);});const v=await form(this.app,'目录与书签',[{key:'page',name:'跳转页面',value:this.page.id,options}]);if(v)this.goToId(v.page.split('#')[0]);}
   private async movePage(){const v=await form(this.app,'移动页面',[{key:'position',name:`目标页码（1–${this.book.pages.length}）`,value:String(this.index+1),type:'number'}]);if(!v)return;const to=Math.max(0,Math.min(this.book.pages.length-1,Number(v.position)-1));if(!Number.isInteger(to))return;const before=this.snapshot();const[p]=this.book.pages.splice(this.index,1);this.book.pages.splice(to,0,p);this.index=to;this.changed(before);this.render();}
   private async clearPage(){if(this.page.locked||!await confirmAction(this.app,'清空当前页（可撤销）','移除此页的所有未锁定笔迹和对象？','清空'))return;const before=this.snapshot();this.page.items=this.page.items.filter(o=>o.locked);this.selection.clear();this.changed(before);this.repaint();this.drawSidebar();}
   private async deletePage(){if(!await confirmAction(this.app,'删除当前页（可撤销）','确认删除此页及其笔迹？','删除'))return;const before=this.snapshot();this.book.pages.splice(this.index,1);if(!this.book.pages.length)this.book.pages.push(newPage(this.plugin.settings.paper));this.index=Math.min(this.index,this.book.pages.length-1);this.selection.clear();this.changed(before);this.render();}
   async copyLink(){if(!this.file)return;const link=`obsidian://penbook?vault=${encodeURIComponent(this.app.vault.getName())}&file=${encodeURIComponent(this.file.path)}&page=${this.page.id}`;await navigator.clipboard.writeText(`[${this.book.title} · ${this.page.title||'第 '+(this.index+1)+' 页'}](${link})`);new Notice('页面链接已复制');}
   private async transferObjects(){const selected=this.page.items.filter(o=>this.selection.has(o.id));if(!selected.length)return;const options:Record<string,string>={};this.book.pages.forEach((p,i)=>{if(i!==this.index)options[p.id]=`${i+1}. ${p.title||'未命名页面'}`;});if(!Object.keys(options).length){new Notice('请先添加另一页');return;}const v=await form(this.app,'选区转移',[{key:'page',name:'目标页面',value:Object.keys(options)[0],options},{key:'mode',name:'操作',value:'copy',options:{copy:'复制',move:'移动'}}]);if(!v)return;const before=this.snapshot(),target=this.book.pages.find(p=>p.id===v.page)!;const copies=clone(selected);copies.forEach(o=>o.id=uid());target.items.push(...copies);if(v.mode==='move')this.page.items=this.page.items.filter(o=>!this.selection.has(o.id)||o.locked);this.selection.clear();this.changed(before);this.repaint();this.drawSidebar();}
-  private async transferPage(move:boolean){const destination=await pickFile(this.app,f=>f.extension==='penbook'&&f.path!==this.file?.path,'选择目标笔记本');if(!destination)return;const page=clone(this.page),resources=clone(this.book.resources);page.id=uid();page.items.forEach(o=>o.id=uid());
-    await this.app.vault.process(destination,data=>{const target=parseBook(data);target.pages.push(page);for(const[key,r]of Object.entries(resources)){if(target.resources[key]&&target.resources[key].data!==r.data)throw new Error('资源标识冲突，操作已取消');target.resources[key]=r;}target.modified=new Date().toISOString();return JSON.stringify(target);});
-    if(move){const before=this.snapshot();this.book.pages.splice(this.index,1);if(!this.book.pages.length)this.book.pages.push(newPage());this.index=Math.min(this.index,this.book.pages.length-1);this.changed(before);this.render();}new Notice(move?'页面已移动':'页面已复制');
+  private pageUrl(path:string,id:string){return `obsidian://penbook?vault=${encodeURIComponent(this.app.vault.getName())}&file=${encodeURIComponent(path)}&page=${id}`;}
+  private async transferPage(move:boolean){const book=this.book,page=this.page,sourcePath=this.file?.path??'',destination=await pickFile(this.app,f=>f.extension==='penbook'&&f.path!==sourcePath,'选择目标笔记本');if(!destination||this.book!==book||!book.pages.includes(page))return;let copiedId='';
+    await this.app.vault.process(destination,data=>{const target=parseBook(data),[copied]=copyPages([page],book,target,id=>this.pageUrl(sourcePath,id));copiedId=copied.id;target.pages.push(copied);target.modified=new Date().toISOString();return JSON.stringify(target);});
+    if(move&&this.book===book){const before=this.snapshot();book.pages.splice(book.pages.indexOf(page),1);for(const p of book.pages)for(const link of p.pdfLinks??[])if(link.page===page.id){link.url=this.pageUrl(destination.path,copiedId);delete link.page;}if(!book.pages.length)book.pages.push(newPage());this.index=Math.min(this.index,book.pages.length-1);this.changed(before);this.render();}new Notice(move?'页面已移动':'页面已复制');
   }
   private importMenu(){const menu=new Menu();const add=(title:string,fn:()=>void|Promise<void>)=>menu.addItem(i=>i.setTitle(title).setIcon(`pb-${actionIcon(title)}`).onClick(()=>void this.run(fn)));
     add('导入 PDF 为 Penbook',()=>this.plugin.fromPdf());
@@ -686,60 +708,38 @@ export class PenbookView extends TextFileView {
     add('从另一个 Penbook 合并页面',()=>this.mergeNotebook());add('从模板文件添加页面',()=>this.loadTemplate());add('图片作为纸张背景',()=>this.importImageBackground());
     this.showMenu(menu);
   }
-  async importVaultFile(file:TFile,replaceEmpty=false){await this.importBytes(new Uint8Array(await this.app.vault.readBinary(file)),file.name,file.extension==='pdf'?'application/pdf':file.extension==='jpg'||file.extension==='jpeg'?'image/jpeg':`image/${file.extension}`,replaceEmpty);}
-  private async importFile(file:File){await this.importBytes(new Uint8Array(await file.arrayBuffer()),file.name,file.type||(/\.pdf$/i.test(file.name)?'application/pdf':'image/png'));}
+  async importVaultFile(file:TFile,replaceEmpty=false){const book=this.book,bytes=new Uint8Array(await this.app.vault.readBinary(file));if(this.closed||this.book!==book)throw new Error('笔记本已切换，导入已取消');await this.importBytes(bytes,file.name,file.extension==='pdf'?'application/pdf':file.extension==='jpg'||file.extension==='jpeg'?'image/jpeg':`image/${file.extension}`,replaceEmpty);}
+  private async importFile(file:File){const book=this.book,bytes=new Uint8Array(await file.arrayBuffer());if(this.closed||this.book!==book)throw new Error('笔记本已切换，导入已取消');await this.importBytes(bytes,file.name,file.type||(/\.pdf$/i.test(file.name)?'application/pdf':'image/png'));}
   private async importBytes(bytes:Uint8Array,name:string,mime:string,replaceEmpty=false){
-    const key=uid(),before=this.snapshot();if(bytes.length>150*1024*1024)throw new Error('单个导入文件暂限 150 MB');
     const isPdf=mime==='application/pdf'||/\.pdf$/i.test(name);if(!isPdf&&!mime.startsWith('image/'))throw new Error('仅支持 PDF 和图片');
-    this.book.resources[key]={type:isPdf?'pdf':'image',name,mime:isPdf?'application/pdf':mime,data:encode(bytes)};
+    await this.importResource({type:isPdf?'pdf':'image',name,mime:isPdf?'application/pdf':mime,data:encode(bytes),size:bytes.length},replaceEmpty);
+  }
+  private async importResource(resource:Resource,replaceEmpty=false){
+    const key=uid(),book=this.book,before=this.snapshot(),isPdf=resource.type==='pdf';book.resources[key]=resource;
     try{
-      if(isPdf){new Notice('正在导入 PDF…');const pages=await this.pdfs.withDocument(key,this.book,async pdf=>{const pages:Page[]=[];
-        for(let i=0;i<pdf.numPages;i++){const p=await pdf.getPage(i+1),vp=p.getViewport({scale:1}),text=await p.getTextContent();const page=newPage('blank');page.width=vp.width;page.height=vp.height;page.color='#ffffff';page.title=`${name.replace(/\.pdf$/i,'')} · ${i+1}`;page.background={resource:key,page:i};page.pdfText=text.items.filter((t):t is any=>'str'in t).map(t=>t.str).join(' ');pages.push(page);}
-        return pages;});if(replaceEmpty&&this.book.pages.length===1&&!this.page.items.length&&!this.page.background){this.book.pages=pages;this.index=0;}else{this.book.pages.splice(this.index+1,0,...pages);this.index++;}
+      if(isPdf){new Notice('正在导入 PDF…');const pages=await this.pdfs.withDocument(key,book,pdf=>importPdfPages(pdf,key,resource.name,book));if(this.closed||this.book!==book)throw new Error('笔记本已切换，导入已取消');if(replaceEmpty&&book.pages.length===1&&!this.page.items.length&&!this.page.background){book.pages=pages;this.index=0;}else{book.pages.splice(this.index+1,0,...pages);this.index++;}
       }else{const img=await this.renderer.image(key,this.book);const w=Math.min(img.width,this.page.width*.75),h=w*img.height/img.width;this.page.items.push({...item('image',40,40,w,h,this.color),resource:key});}
       this.changed(before);this.render();
-    }catch(error){delete this.book.resources[key];throw error;}
+    }catch(error){delete book.resources[key];throw error;}
   }
   private async importImageBackground(){const f=await localFile('image/png,image/jpeg,image/webp');if(!f)return;const bytes=new Uint8Array(await f.arrayBuffer()),key=uid(),before=this.snapshot();this.book.resources[key]={type:'image',name:f.name,mime:f.type,data:encode(bytes)};await this.renderer.image(key,this.book);this.page.background={resource:key};this.changed(before);this.drawPages();this.drawSidebar();}
-  private async mergeNotebook(){const file=await pickFile(this.app,f=>f.extension==='penbook'&&f.path!==this.file?.path,'选择要合并的笔记本');if(!file)return;const book=parseBook(await this.app.vault.read(file)),before=this.snapshot(),mapping=new Map<string,string>();for(const[key,r]of Object.entries(book.resources)){const newKey=uid();mapping.set(key,newKey);this.book.resources[newKey]=r;}for(const p of book.pages){p.id=uid();if(p.background)p.background.resource=mapping.get(p.background.resource)!;p.items.forEach(o=>{o.id=uid();if(o.resource)o.resource=mapping.get(o.resource)!;});}this.book.pages.splice(this.index+1,0,...book.pages);this.index++;this.changed(before);this.render();}
+  private async mergeNotebook(){const target=this.book,file=await pickFile(this.app,f=>f.extension==='penbook'&&f.path!==this.file?.path,'选择要合并的笔记本');if(!file)return;const book=parseBook(await this.app.vault.read(file));if(this.book!==target)return;const before=this.snapshot(),pages=copyPages(book.pages,book,target,id=>this.pageUrl(file.path,id));target.pages.splice(this.index+1,0,...pages);this.index++;this.changed(before);this.render();}
   private async saveTemplate(){const v=await form(this.app,'保存纸张模板',[{key:'name',name:'模板名称',value:this.page.title||'自定义模板'}]);if(!v)return;const book=newBook(v.name);book.pages=[clone(this.page)];book.resources=clone(this.book.resources);const folder=await this.plugin.folder(`${this.plugin.settings.folder}/模板`),name=v.name.replace(/[\\/:*?"<>|]/g,'-'),path=await this.plugin.unique(`${folder}/${name}.penbook`);await this.app.vault.create(path,JSON.stringify(book));new Notice(`模板已保存：${path}`);}
-  private async loadTemplate(){const file=await pickFile(this.app,f=>f.extension==='penbook','选择模板笔记本（将插入第一页）');if(!file)return;const book=parseBook(await this.app.vault.read(file)),before=this.snapshot(),p=clone(book.pages[0]),mapping=new Map<string,string>();for(const[key,r]of Object.entries(book.resources)){const k=uid();mapping.set(key,k);this.book.resources[k]=r;}p.id=uid();if(p.background)p.background.resource=mapping.get(p.background.resource)!;p.items.forEach(o=>{o.id=uid();if(o.resource)o.resource=mapping.get(o.resource)!;});this.book.pages.splice(this.index+1,0,p);this.index++;this.changed(before);this.render();}
+  private async loadTemplate(){const target=this.book,file=await pickFile(this.app,f=>f.extension==='penbook','选择模板笔记本（将插入第一页）');if(!file)return;const book=parseBook(await this.app.vault.read(file));if(this.book!==target)return;const before=this.snapshot(),[p]=copyPages([book.pages[0]],book,target,id=>this.pageUrl(file.path,id));target.pages.splice(this.index+1,0,p);this.index++;this.changed(before);this.render();}
   private async insertMarkdown(){const f=await pickFile(this.app,f=>f.extension==='md','选择文本笔记');if(!f)return;const text=await this.app.vault.read(f),before=this.snapshot();this.page.items.push({...item('text',50,50,this.page.width-100,Math.min(this.page.height-100,500),this.color),text,fontSize:18});this.changed(before);this.repaint();this.drawSidebar();}
   private exportMenu(){const menu=new Menu();const add=(title:string,fn:()=>void|Promise<void>)=>menu.addItem(i=>i.setTitle(title).setIcon(`pb-${actionIcon(title)}`).onClick(()=>void this.run(fn)));
     add('导出 PDF…',()=>this.exportDialog());add('当前页 PNG',()=>this.exportPng());add('当前页 SVG（笔迹为矢量）',()=>this.exportSvg());add('Markdown 页面索引',()=>this.exportIndex());add('笔记本原始文件副本',async()=>{await this.flush();await this.plugin.writeBinary(`${this.book.title}.penbook`,new TextEncoder().encode(this.getViewData()));});add('导出当前页预览供 Markdown 嵌入',()=>this.preview());this.showMenu(menu);
   }
   async exportDialog(){const v=await form(this.app,'导出 PDF',[{key:'range',name:'页面范围',value:'all',options:{all:'整本笔记本',current:'当前页',custom:'指定页码'}},{key:'pages',name:'指定页码（例如 1,3-5）',value:''},{key:'mode',name:'内容',value:'all',options:{all:'背景与批注',ink:'仅笔迹与对象',background:'仅背景'}}]);if(!v)return;let pages=this.book.pages;if(v.range==='current')pages=[this.page];if(v.range==='custom'){const indices=new Set<number>();for(const part of v.pages.split(/[,，]/)){const m=part.trim().match(/^(\d+)(?:\s*-\s*(\d+))?$/);if(!m)throw new Error('页码格式不正确');const start=Number(m[1]),end=Number(m[2]??m[1]);if(start<1||end>this.book.pages.length||end<start)throw new Error('页码超出范围');for(let i=start;i<=end;i++)indices.add(i-1);}pages=[...indices].sort((a,b)=>a-b).map(i=>this.book.pages[i]);}if(!pages.length)throw new Error('未选择页面');await this.exportPdf(v.mode as 'all'|'ink'|'background',pages);}
-  private async exportPdf(mode:'all'|'ink'|'background',pages:Page[]){new Notice('正在生成 PDF…');await this.flush();const bytes=await this.pdfs.export(this.book,pages,this.renderer,mode);return this.plugin.writeBinary(`${this.safeName()}${pages.length===1?`-第${this.book.pages.indexOf(pages[0])+1}页`:''}${mode==='all'?'':'-'+mode}.pdf`,bytes);}
+  private async exportPdf(mode:'all'|'ink'|'background',pages:Page[]){new Notice('正在生成 PDF…');await this.flush();const exportPages=clone(pages),book={...this.book,pages:exportPages,resources:{...this.book.resources}},name=`${this.safeName()}${pages.length===1?`-第${this.book.pages.indexOf(pages[0])+1}页`:''}${mode==='all'?'':'-'+mode}.pdf`,bytes=await this.pdfs.export(book,exportPages,this.renderer,mode);return this.plugin.writeBinary(name,bytes);}
   private safeName(){return this.book.title.replace(/[\\/:*?"<>|]/g,'-');}
   private async exportPng(){const c=await this.pdfs.canvas(this.page,this.book,this.renderer,this.plugin.settings.exportScale);await this.plugin.writeBinary(`${this.safeName()}-第${this.index+1}页.png`,decode(c.toDataURL('image/png').split(',')[1]));}
   private async exportIndex(){const title=this.book.title.replace(/[\r\n]/g,' ');const text=[`# ${title}`,'',`笔记本：[[${this.file?.path}]]`,'',...this.book.pages.flatMap((p,i)=>[`## ${i+1}. ${p.title||'未命名页面'}`,'',`[打开此页](obsidian://penbook?vault=${encodeURIComponent(this.app.vault.getName())}&file=${encodeURIComponent(this.file?.path??'')}&page=${p.id})`,p.tags.length?'标签：'+p.tags.map(t=>'#'+t.replace(/\s/g,'-')).join(' '):'',...p.items.filter(o=>o.text).map(o=>o.text!),p.pdfText,''])].join('\n');const folder=await this.plugin.folder(this.plugin.settings.folder),path=await this.plugin.unique(`${folder}/${this.safeName()}-索引.md`),file=await this.app.vault.create(path,text);await this.app.workspace.getLeaf('tab').openFile(file);new Notice('页面索引已保存');}
   private async preview(){if(!this.file)return;const c=await this.pdfs.canvas(this.page,this.book,this.renderer,.6),path=normalizePath(`${this.file.parent?.path??''}/${this.file.basename}.preview.png`),data=decode(c.toDataURL().split(',')[1]);const f=this.app.vault.getAbstractFileByPath(path);if(f instanceof TFile)await this.app.vault.modifyBinary(f,new Uint8Array(data).buffer);else await this.app.vault.createBinary(path,new Uint8Array(data).buffer);new Notice('预览已保存。可使用 penbook 代码块嵌入笔记本。');}
   private async exportSvg(){
-    const p=this.page;const bg=await this.pdfs.canvas(p,this.book,this.renderer,1,'background');const esc=(s:string)=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+    const p=this.page;const bg=await this.pdfs.canvas(p,this.book,this.renderer,1,'background'),ctx=document.createElement('canvas').getContext('2d')!;
     const nodes=[`<image width="${p.width}" height="${p.height}" href="${bg.toDataURL()}"/>`];
-    for(const o of p.items){if(o.kind==='stroke'){
-      const style=o.strokeStyle??o.ink?.style??'solid',points=style==='solid'?this.renderer.strokeOutline(o):o.points??[];
-      const path=points.map((p,i)=>`${i?'L':'M'}${p[0]},${p[1]}`).join(' ')+(style==='solid'?'Z':'');
-      const paint=style==='solid'?`fill="${esc(o.color)}"`:`fill="none" stroke="${esc(o.color)}" stroke-width="${o.width??3}" stroke-linecap="round" stroke-dasharray="${style==='dashed'?`${(o.width??3)*4} ${(o.width??3)*2}`:`0.1 ${(o.width??3)*2}`}"`;
-      const clipId=`erase-${nodes.length}`;if(o.eraseMasks?.length||o.frozenInk)nodes.push(`<defs><clipPath id="${clipId}"><path d="${erasureClipPath(o)}" clip-rule="evenodd"/></clipPath></defs>`);
-      nodes.push(`<g transform="translate(${o.x+o.w/2} ${o.y+o.h/2}) rotate(${o.rotation}) translate(${-o.w/2} ${-o.h/2}) scale(${o.w/o.bw} ${o.h/o.bh})"><path d="${path}" ${paint} opacity="${o.opacity}" ${o.eraseMasks?.length||o.frozenInk?`clip-path="url(#${clipId})"`:''}/></g>`);
-    }else if(o.kind==='shape'||o.kind==='sticky'||o.kind==='text'){
-      const w=o.bw,h=o.bh,scale=`translate(${o.x+o.w/2} ${o.y+o.h/2}) rotate(${o.rotation}) translate(${-o.w/2} ${-o.h/2}) scale(${o.w/o.bw} ${o.h/o.bh})`,strokeWidth=o.width??2;
-      let content='';
-      if(o.kind==='shape'){
-        const dash=o.strokeStyle==='dashed'?`${strokeWidth*4} ${strokeWidth*2}`:o.strokeStyle==='dotted'?`0.1 ${strokeWidth*2}`:'';
-        const filled=o.fill&&!['line','arrow'].includes(o.shape??'');const style=`fill="${filled?esc(o.color):'none'}"${filled?' fill-opacity="0.2"':''} stroke="${esc(o.color)}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"${dash?` stroke-dasharray="${dash}"`:''}`;
-        if(o.shape==='rectangle'||o.shape==='rounded')content=`<rect x="0" y="0" width="${w}" height="${h}"${o.shape==='rounded'?` rx="${Math.min(20,w/4,h/4)}"`:''} ${style}/>`;
-        else if(o.shape==='ellipse')content=`<ellipse cx="${w/2}" cy="${h/2}" rx="${w/2}" ry="${h/2}" ${style}/>`;
-        else {const a=o.points?.[0]??[0,0],b=o.points?.[1]??[w,h];let d='';if(o.shape==='triangle'){const pts=o.points?.length===3?o.points:[[w/2,0],[w,h],[0,h]];d=`M${pts[0][0]},${pts[0][1]} ${pts.slice(1).map(p=>`L${p[0]},${p[1]}`).join(' ')} Z`;}else if(o.shape==='diamond')d=`M${w/2},0 L${w},${h/2} L${w/2},${h} L0,${h/2} Z`;else{d=`M${a[0]},${a[1]} L${b[0]},${b[1]}`;if(o.shape==='arrow'){const angle=Math.atan2(b[1]-a[1],b[0]-a[0]),l=16;d+=` M${b[0]-l*Math.cos(angle-.45)},${b[1]-l*Math.sin(angle-.45)} L${b[0]},${b[1]} L${b[0]-l*Math.cos(angle+.45)},${b[1]-l*Math.sin(angle+.45)}`;}}content=`<path d="${d}" ${style}/>`;}
-      }else{
-        const size=o.fontSize??22,lineHeight=o.lineHeight??1.4,font=`${o.italic?'italic ':''}${o.bold?'bold ':''}${size}px ${o.font??'sans-serif'}`,ctx=document.createElement('canvas').getContext('2d')!;ctx.font=font;
-        const lines:string[]=[];for(const paragraph of (o.text??'').split('\n')){let line='';for(const ch of paragraph){if(ctx.measureText(line+ch).width>w-16&&line){lines.push(line);line='';}line+=ch;}lines.push(line);}
-        const anchor=o.align==='center'?'middle':o.align==='right'?'end':'start',textX=o.align==='center'?w/2:o.align==='right'?w-8:8,fill=esc(o.color);const bg=o.kind==='sticky'?`<rect width="${w}" height="${h}" fill="${esc(o.backgroundColor??'#fff2a8')}"/>`:'';
-        const spans=lines.map((line,i)=>`<tspan x="${textX}" dy="${i===0?0:size*lineHeight}">${esc(line)}</tspan>`).join('');content=`${bg}<text x="${textX}" y="8" dominant-baseline="hanging" text-anchor="${anchor}" font-family="${esc(o.font??'sans-serif')}" font-size="${size}"${o.bold?' font-weight="bold"':''}${o.italic?' font-style="italic"':''} fill="${fill}">${spans}</text>`;
-      }
-      nodes.push(`<g transform="${scale}" opacity="${o.opacity}">${content}</g>`);
-    }else{const c=document.createElement('canvas');c.width=p.width;c.height=p.height;const ctx=c.getContext('2d')!,img=o.resource?await this.renderer.image(o.resource,this.book):undefined;this.renderer.draw(ctx,o,img);nodes.push(`<image width="${p.width}" height="${p.height}" href="${c.toDataURL()}"/>`);}}
+    p.items.forEach((o,i)=>nodes.push(itemSvg(o,this.book,this.renderer,ctx,`item-${i}`)));bg.width=bg.height=1;
     const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${p.width}" height="${p.height}" viewBox="0 0 ${p.width} ${p.height}">${nodes.join('')}</svg>`;await this.plugin.writeBinary(`${this.safeName()}-第${this.index+1}页.svg`,new TextEncoder().encode(svg));
   }
 }

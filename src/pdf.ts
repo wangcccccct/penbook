@@ -1,9 +1,11 @@
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs';
 import pdfWorkerSource from 'pdfjs-dist/legacy/build/pdf.worker.mjs';
-import { PDFDocument, degrees } from 'pdf-lib';
+import { PDFDocument, PDFPage, PDFName, PDFRef, PDFDict, degrees } from 'pdf-lib';
 import { Notebook, Page, decode } from './model';
 import { Renderer } from './render';
 import { BudgetCache, RenderQueue } from './resources';
+import { addObjectAnnotation, applyPdfCrop, writePdfNavigation } from './pdf-annotations';
+import { ANNOTATION_ATTACHMENT, AnnotationArchive } from './pdf-import';
 async function pngBytes(canvas:HTMLCanvasElement){try{const blob=await new Promise<Blob>((resolve,reject)=>canvas.toBlob(blob=>blob?resolve(blob):reject(new Error('无法编码页面图片')),'image/png'));return new Uint8Array(await blob.arrayBuffer());}finally{canvas.width=canvas.height=1;}}
 
 export class PDFs {
@@ -37,9 +39,11 @@ export class PDFs {
         void this.worker.promise.then(()=>URL.revokeObjectURL(workerUrl),()=>URL.revokeObjectURL(workerUrl));
       }
       const worker=this.worker;
-      p=pdfjs.getDocument({ worker,data:decode(r.data), cMapUrl:this.asset('cmaps/'), cMapPacked:true, standardFontDataUrl:this.asset('standard_fonts/'), wasmUrl:this.asset('wasm/'), useWorkerFetch:false }).promise;
+      p=(async()=>{
+        return pdfjs.getDocument({worker,data:decode(r.data),cMapUrl:this.asset('cmaps/'),cMapPacked:true,standardFontDataUrl:this.asset('standard_fonts/'),wasmUrl:this.asset('wasm/'),useWorkerFetch:false}).promise;
+      })();
       this.docs.set(key,p);
-      this.sizes.set(key,r.data.length*1.5);
+      this.sizes.set(key,r.size??r.data.length*1.5);
       void p.catch(()=>{if(this.docs.get(key)===p)this.docs.delete(key);});
     }
     this.docs.delete(key);this.docs.set(key,p);return p;
@@ -52,11 +56,11 @@ export class PDFs {
   private async releaseIdleDocuments(){this.idleTimer=undefined;this.trimDocuments(true);const worker=this.worker,port=this.port;await Promise.allSettled([...this.disposing]);if(!this.docs.size&&this.worker===worker){worker?.destroy();port?.terminate();this.worker=undefined;this.port=undefined;}}
   private trimDocuments(all=false){
     let bytes=[...this.sizes.values()].reduce((sum,size)=>sum+size,0);
-    for(const[key,promise]of this.docs){if(this.leases.get(key))continue;if(!all&&(this.docs.size<=1||this.docs.size<=3&&bytes<=96*1024*1024))break;this.docs.delete(key);bytes-=this.sizes.get(key)??0;this.sizes.delete(key);this.leases.delete(key);const dispose=promise.then(pdf=>pdf.cleanup()).catch(()=>{});this.disposing.add(dispose);void dispose.finally(()=>this.disposing.delete(dispose));}
+    for(const[key,promise]of this.docs){if(this.leases.get(key))continue;if(!all&&(this.docs.size<=1||this.docs.size<=3&&bytes<=96*1024*1024))break;this.docs.delete(key);bytes-=this.sizes.get(key)??0;this.sizes.delete(key);this.leases.delete(key);const dispose=promise.then(pdf=>pdf.loadingTask.destroy()).catch(()=>{});this.disposing.add(dispose);void dispose.finally(()=>this.disposing.delete(dispose));}
   }
   async background(canvas: HTMLCanvasElement, page: Page, book: Notebook, renderer: Renderer, scale: number,signal?:AbortSignal) {
     const generation=this.generation;
-    const key=JSON.stringify([page.width,page.height,page.paper,page.color,page.spacing,page.background,page.backgroundRotation,canvas.width,canvas.height]);
+    const key=JSON.stringify([page.width,page.height,page.paper,page.color,page.spacing,page.background,page.backgroundRotation,page.backgroundCrop,page.pdfAnnotationIds,canvas.width,canvas.height]);
     const cached=this.backgrounds.get(key);if(cached){if(signal?.aborted)throw new DOMException('Cancelled','AbortError');const ctx=canvas.getContext('2d')!;ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(cached,0,0);return;}
     await this.queue.run(async()=>{
       if(generation!==this.generation)throw new DOMException('Cancelled','AbortError');
@@ -74,7 +78,9 @@ export class PDFs {
       await this.withDocument(bg.resource,book,async pdf=>{const p=await pdf.getPage((bg.page??0)+1);
       if(signal?.aborted)throw new DOMException('Cancelled','AbortError');
       const vp=p.getViewport({scale:1,rotation:(p.rotate+(page.backgroundRotation??0))%360});
-      const task=p.render({canvasContext:ctx,canvas,viewport:vp,transform:[scale*page.width/vp.width,0,0,scale*page.height/vp.height,0,0]});this.renders.add(task);
+      const crop=page.backgroundCrop??{x:0,y:0,w:1,h:1},sx=scale*page.width/(vp.width*crop.w),sy=scale*page.height/(vp.height*crop.h);
+      const excluded=new Set<number>();if(page.pdfAnnotationIds?.length){const ids=new Set(page.pdfAnnotationIds),list=await p.getOperatorList();let hide=false;for(let i=0;i<list.fnArray.length;i++){if(list.fnArray[i]===pdfjs.OPS.beginAnnotation)hide=ids.has(list.argsArray[i][0]);if(hide)excluded.add(i);if(list.fnArray[i]===pdfjs.OPS.endAnnotation)hide=false;}}
+      const task=p.render({canvasContext:ctx,canvas,viewport:vp,transform:[sx,0,0,sy,-crop.x*vp.width*sx,-crop.y*vp.height*sy],operationsFilter:excluded.size?i=>!excluded.has(i):undefined});this.renders.add(task);
       const cancel=()=>task.cancel();signal?.addEventListener('abort',cancel,{once:true});
       try{await task.promise;}finally{signal?.removeEventListener('abort',cancel);this.renders.delete(task);p.cleanup();}
       });
@@ -94,24 +100,34 @@ export class PDFs {
     }catch(error){canvas.width=canvas.height=1;throw error;}
   }
   async export(book:Notebook,pages:Page[],renderer:Renderer,mode:'all'|'ink'|'background') {
-    const out=await PDFDocument.create(); const sources=new Map<string,PDFDocument>();
-    for(const page of pages) {
-      const bg=page.background;
-      // Copy native PDF pages and overlay ink; original text remains searchable.
-      if(mode!=='ink'&&bg&&book.resources[bg.resource]?.type==='pdf') {
-        let source=sources.get(bg.resource);if(!source){source=await PDFDocument.load(decode(book.resources[bg.resource].data));sources.set(bg.resource,source);}
-        const [copied]=await out.copyPages(source,[bg.page??0]);copied.setRotation(degrees((copied.getRotation().angle+(page.backgroundRotation??0))%360));out.addPage(copied);
-        if(mode==='all') {
-          const image=await out.embedPng(await pngBytes(await this.canvas(page,book,renderer,1.5,'ink')));
-          const box=copied.getCropBox(), rotation=((copied.getRotation().angle%360)+360)%360;
-          const x=box.x+(rotation===90||rotation===180?box.width:0),y=box.y+(rotation===180||rotation===270?box.height:0);
-          copied.drawImage(image,{x,y,width:rotation%180?box.height:box.width,height:rotation%180?box.width:box.height,rotate:degrees(rotation)});
-        }
-      } else {
-        const canvas=await this.canvas(page,book,renderer,1.5,mode), image=await out.embedPng(await pngBytes(canvas));
-        out.addPage([page.width,page.height]).drawImage(image,{x:0,y:0,width:page.width,height:page.height});
+    const out=await PDFDocument.create(),archive:AnnotationArchive={format:'penbook-annotations',version:1,resources:{},pages:[]},records:{page:Page;target:import('pdf-lib').PDFPage}[]=[];
+    const native=new Map<Page,PDFPage>(),keys=new Set(pages.filter(p=>mode!=='ink'&&p.background&&book.resources[p.background.resource]?.type==='pdf').map(p=>p.background!.resource));
+    for(const key of keys){
+      const resource=book.resources[key];
+      const source=await PDFDocument.load(decode(resource.data)),requested=pages.filter(p=>p.background?.resource===key),indices=[...new Set(requested.map(p=>p.background!.page??0))],copied=await out.copyPages(source,indices);
+      for(const page of requested){
+        const index=page.background!.page??0,base=copied[indices.indexOf(index)],node=base.node.clone(out.context),target=PDFPage.of(node,out.context.register(node),out);target.setRotation(degrees((target.getRotation().angle+(page.backgroundRotation??0))%360));applyPdfCrop(target,page);
+        const originals=source.getPage(index).node.Annots()?.asArray()??[],annotations=base.node.Annots()?.asArray()??[],ids=new Set(page.pdfAnnotationIds),keep:PDFRef[]=[];
+        annotations.forEach((ref,i)=>{const original=originals[i],originalDict=source.context.lookup(original);if(original instanceof PDFRef&&ids.has(`${original.objectNumber}R${original.generationNumber||''}`)||page.pdfLinks&&originalDict instanceof PDFDict&&originalDict.get(PDFName.of('Subtype'))===PDFName.of('Link'))return;const copiedDict=out.context.lookup(ref);if(copiedDict instanceof PDFDict){const dictionary=copiedDict.clone(out.context);dictionary.set(PDFName.of('P'),target.ref);keep.push(out.context.register(dictionary));}});
+        node.set(PDFName.of('Annots'),out.context.obj(keep));native.set(page,target);
       }
+      await new Promise<void>(r=>setTimeout(r,0));
     }
+    for(const page of pages) {
+      let target:PDFPage;
+      // Copy native PDF pages and overlay ink; original text remains searchable.
+      if(native.has(page)) {
+        target=native.get(page)!;out.addPage(target);
+      } else {
+        target=out.addPage([page.width,page.height]);
+        if(mode!=='ink'){const image=await out.embedPng(await pngBytes(await this.canvas(page,book,renderer,1.5,'background')));target.drawImage(image,{x:0,y:0,width:page.width,height:page.height});}
+      }
+      records.push({page,target});const saved:AnnotationArchive['pages'][number]={width:page.width,height:page.height,annotations:[]};archive.pages.push(saved);
+      if(mode!=='background')for(const o of page.items){saved.annotations.push(await addObjectAnnotation(out,target,page,o,book,renderer));if(o.resource&&book.resources[o.resource]?.type==='image')archive.resources[o.resource]=book.resources[o.resource];}
+      await new Promise<void>(r=>setTimeout(r,0));
+    }
+    writePdfNavigation(out,records);
+    if(mode!=='background')await out.attach(new TextEncoder().encode(JSON.stringify(archive)),ANNOTATION_ATTACHMENT,{mimeType:'application/json',description:'Penbook editable annotation data'});
     return out.save();
   }
 }

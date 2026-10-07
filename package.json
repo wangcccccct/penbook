@@ -1,6 +1,6 @@
 {
   "name": "obsidian-penbook",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "description": "A Goodnotes-inspired handwriting experience for Obsidian, independently implemented from scratch.",
   "author": "Penbook contributors",
@@ -32,7 +32,7 @@
     "polygon-clipping": "^0.15.7"
   },
   "devDependencies": {
-    "@napi-rs/canvas": "^0.1.100",
+    "@napi-rs/canvas": "^1.0.10",
     "@types/clipper-lib": "^6.4.0",
     "@types/node": "^24.0.0",
     "esbuild": "^0.25.0",

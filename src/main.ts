@@ -7,6 +7,7 @@ import { PenbookView, VIEW_TYPE } from './view';
 import { icon, registerIcons } from './icons';
 import { installTooltips } from './tooltips';
 import { SHORTCUTS, shortcutHint } from './shortcuts';
+import { SelectionClipboard } from './selection-clipboard';
 
 export interface Preferences {
   folder:string; paper:Paper; penColor:string; penWidth:number; pressure:number; fingerInk:boolean;
@@ -19,6 +20,7 @@ export const DEFAULTS:Preferences={folder:'手写笔记',paper:'ruled',penColor:
 
 export default class PenbookPlugin extends Plugin {
   settings:Preferences={...DEFAULTS};
+  selectionClipboard:SelectionClipboard|null=null;
   async onload(){
     registerIcons();
     this.register(installTooltips());
@@ -97,7 +99,7 @@ class PenbookSettings extends PluginSettingTab {
     el.createEl('h3',{text:'画布快捷键'});
     el.createEl('p',{text:'快捷键仅在 Penbook 画布中生效；输入文字时保留原生编辑快捷键。Mod 在 macOS 上为 Cmd，其他平台为 Ctrl。可在 Obsidian 的快捷键设置中搜索 Penbook，为以下命令另绑按键。'});
     const shortcuts=el.createEl('table'),head=shortcuts.createEl('thead').createEl('tr');head.createEl('th',{text:'操作'});head.createEl('th',{text:'默认按键'});const body=shortcuts.createEl('tbody');for(const [,name,keys]of SHORTCUTS){const row=body.createEl('tr');row.createEl('td',{text:name});row.createEl('td',{text:keys.join(' / ')||'可在快捷键设置中绑定'});}
-    el.createEl('p',{text:'方向键移动 1 像素，Shift + 方向键移动 10 像素。复制、剪切、粘贴使用当前笔记本的对象剪贴板。'});
+    el.createEl('p',{text:'方向键移动 1 像素，Shift + 方向键移动 10 像素。复制或剪切后可切换到另一本 Penbook 粘贴选区。'});
     el.createEl('p',{text:'运行时完全本地。OCR、手写转文本与识别搜索暂未实现；同步、录音与窗口管理不属于插件范围。'});
   }
 }
