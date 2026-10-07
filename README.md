@@ -1,5 +1,7 @@
 # Penbook
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 **A Goodnotes-inspired handwriting experience for Obsidian.**
 
 Independently implemented from scratch. Not affiliated with or endorsed by Goodnotes.
