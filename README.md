@@ -22,6 +22,10 @@ The toolbar has two rows: primary tools above and a rounded settings bar for the
   <img src="screenshots/03-sticky-note.png" alt="Penbook sticky note" width="49%" />
   <img src="screenshots/04-object-selection.png" alt="Penbook object selection" width="49%" />
 </p>
+<p align="center">
+  <img src="screenshots/05-writing.png" alt="Penbook writing" width="49%" />
+  <img src="screenshots/06-overall.png" alt="Penbook toolbar overview" width="49%" />
+</p>
 
 ## Getting started
 

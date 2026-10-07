@@ -22,6 +22,10 @@ Penbook 是一款面向 Obsidian 桌面版和 Android 平板的本地手写笔�
   <img src="screenshots/03-sticky-note.png" alt="Penbook 便签" width="49%" />
   <img src="screenshots/04-object-selection.png" alt="Penbook 对象选择" width="49%" />
 </p>
+<p align="center">
+  <img src="screenshots/05-writing.png" alt="Penbook 手写界面" width="49%" />
+  <img src="screenshots/06-overall.png" alt="Penbook 工具栏概览" width="49%" />
+</p>
 
 ## 开始使用
 
