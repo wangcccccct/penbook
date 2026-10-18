@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+- Use Obsidian's settings heading and CSS APIs to satisfy current community review checks.
+- Keep the release manifest name aligned with the directory listing and terminate its description with accepted punctuation.
+
 ## 0.3.0
 
 - Preserve standard annotation subtypes, original appearance streams, comments, attachments, popup/reply relationships, and form values when importing and exporting PDFs.

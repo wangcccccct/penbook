@@ -89,14 +89,14 @@ class Library extends Modal {
 }
 class PenbookSettings extends PluginSettingTab {
   constructor(private plugin:PenbookPlugin){super(plugin.app,plugin);}
-  display(){const el=this.containerEl;el.empty();el.createEl('h2',{text:'Penbook 手写笔记'});
+  display(){const el=this.containerEl;el.empty();new Setting(el).setName('Penbook 手写笔记').setHeading();
     new Setting(el).setName('新笔记本文件夹').addText(t=>t.setValue(this.plugin.settings.folder).onChange(async v=>{this.plugin.settings.folder=normalizePath(v||'手写笔记');await this.plugin.saveSettings();}));
     new Setting(el).setName('默认纸张').addDropdown(d=>d.addOptions(PAPERS).setValue(this.plugin.settings.paper).onChange(async v=>{this.plugin.settings.paper=v as Paper;await this.plugin.saveSettings();}));
     new Setting(el).setName('默认墨水颜色').addColorPicker(c=>c.setValue(this.plugin.settings.penColor).onChange(async v=>{this.plugin.settings.penColor=v;await this.plugin.saveSettings();}));
     new Setting(el).setName('默认笔宽').addSlider(s=>s.setLimits(1,20,1).setValue(this.plugin.settings.penWidth).setDynamicTooltip().onChange(async v=>{this.plugin.settings.penWidth=v;await this.plugin.saveSettings();}));
     new Setting(el).setName('压感响应').setDesc('小于 1 时轻触更粗，大于 1 时需要更大压力。').addSlider(s=>s.setLimits(.3,2,.1).setValue(this.plugin.settings.pressure).setDynamicTooltip().onChange(async v=>{this.plugin.settings.pressure=v;await this.plugin.saveSettings();}));
     for(const [key,name,desc] of [['fingerInk','允许手指书写','关闭时手指只负责平移和双指缩放，S Pen 与鼠标负责书写。'],['leftHanded','左手布局','将页面导航放在右侧。'],['toolbarBottom','工具栏放在底部','适合平板横屏书写。']] as const)new Setting(el).setName(name).setDesc(desc).addToggle(t=>t.setValue(this.plugin.settings[key]).onChange(async v=>{this.plugin.settings[key]=v;await this.plugin.saveSettings();}));
-    el.createEl('h3',{text:'画布快捷键'});
+    new Setting(el).setName('画布快捷键').setHeading();
     el.createEl('p',{text:'快捷键仅在 Penbook 画布中生效；输入文字时保留原生编辑快捷键。Mod 在 macOS 上为 Cmd，其他平台为 Ctrl。可在 Obsidian 的快捷键设置中搜索 Penbook，为以下命令另绑按键。'});
     const shortcuts=el.createEl('table'),head=shortcuts.createEl('thead').createEl('tr');head.createEl('th',{text:'操作'});head.createEl('th',{text:'默认按键'});const body=shortcuts.createEl('tbody');for(const [,name,keys]of SHORTCUTS){const row=body.createEl('tr');row.createEl('td',{text:name});row.createEl('td',{text:keys.join(' / ')||'可在快捷键设置中绑定'});}
     el.createEl('p',{text:'方向键移动 1 像素，Shift + 方向键移动 10 像素。复制或剪切后可切换到另一本 Penbook 粘贴选区。'});

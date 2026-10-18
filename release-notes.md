@@ -1,6 +1,6 @@
-# Penbook 0.3.0
+# Penbook 0.3.1
 
-The automated PDF and regression checks listed below pass. Obsidian UI verification remains separate.
+This maintenance release fixes the current Obsidian community review errors. It also aligns the published manifest with the existing directory name and description format. The automated PDF and regression checks listed below pass. Obsidian UI verification remains separate.
 
 This release expands standard PDF annotation round-tripping and includes all features from 0.2.0, including embedded PDFs, editable tables, cross-notebook selection copy/cut, vector object SVG export, bookmarks, links, and page cropping.
 

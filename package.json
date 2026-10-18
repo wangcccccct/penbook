@@ -1,6 +1,6 @@
 {
   "name": "obsidian-penbook",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "license": "MIT",
   "description": "A Goodnotes-inspired handwriting experience for Obsidian, independently implemented from scratch.",
   "author": "Penbook contributors",

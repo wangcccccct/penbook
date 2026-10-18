@@ -79,7 +79,7 @@ export class PenbookView extends TextFileView {
     catch(error){this.valid=false;this.contentEl.empty();this.contentEl.createDiv({cls:'pb-error',text:String(error)});}
   }
   clear(){this.finishGesture(false);this.releaseSurfaces();this.thumbsController?.abort();this.snapshots.clear();this.undoStack=[];this.redoStack=[];this.selection.clear();this.index=0;this.valid=false;this.renderer.clear();void this.pdfs.clear();if(this.saveTimer)window.clearTimeout(this.saveTimer);this.dirty=false;this.lastWritten=undefined;}
-  async onOpen(){this.closed=false;this.contentEl.style.padding='0';
+  async onOpen(){this.closed=false;this.contentEl.addClass('pb-view-content');
     this.wasActive=this.app.workspace.getActiveViewOfType(PenbookView)===this;
     this.registerEvent(this.app.workspace.on('active-leaf-change',leaf=>{const active=leaf?.view===this;if(this.wasActive&&!active)void this.run(()=>this.savePendingEdits());this.wasActive=active;}));
     // Obsidian waits for quit Tasks; an async beforeunload callback alone cannot
@@ -303,7 +303,6 @@ export class PenbookView extends TextFileView {
     }
     for(const link of s.page.pdfLinks??[]){const a=s.text.createEl('a',{attr:{href:link.url??'#','aria-label':link.page?'跳转到 PDF 页面':link.url??'PDF 链接'}});a.style.left=`${link.x*this.zoom}px`;a.style.top=`${link.y*this.zoom}px`;a.style.width=`${link.w*this.zoom}px`;a.style.height=`${link.h*this.zoom}px`;a.onclick=e=>{e.preventDefault();e.stopPropagation();this.activate(s);void this.run(()=>link.page?Promise.resolve(this.goToId(link.page)):this.openLink(link.url??''));};}
     // Put selectable text above the pointer canvas only in reading mode.
-    s.text.style.zIndex='5';
     });
   }
   private async paint(s:Surface){
@@ -584,7 +583,7 @@ export class PenbookView extends TextFileView {
     const events=new AbortController(),inputScope=new Scope();this.app.keymap.pushScope(inputScope);let finished=false,composing=false;
     const finish=(save:boolean)=>{if(finished)return;finished=true;const text=textarea.innerText.replace(/\n$/,'');if(save)object.h=object.bh=Math.max(object.h,textarea.scrollHeight/this.zoom);events.abort();this.app.keymap.popScope(inputScope);textarea.remove();this.inlineEditor=undefined;this.inlineEditingId=undefined;if(save)commit(text);this.repaint();};
     this.inlineEditor={finish,refresh};this.inlineEditingId=object.id;refresh();this.repaint();
-    textarea.oninput=()=>{textarea.style.height='auto';textarea.style.height=`${Math.max(object.h*this.zoom,textarea.scrollHeight)}px`;};
+    textarea.oninput=()=>{textarea.setCssProps({height:'auto'});textarea.setCssProps({height:`${Math.max(object.h*this.zoom,textarea.scrollHeight)}px`});};
     document.addEventListener('scroll',position,{capture:true,signal:events.signal});window.addEventListener('resize',position,{signal:events.signal});
     textarea.addEventListener('paste',e=>{e.preventDefault();e.stopPropagation();document.execCommand('insertText',false,e.clipboardData?.getData('text/plain')??'');},{signal:events.signal});
     textarea.addEventListener('compositionstart',()=>{composing=true;},{signal:events.signal});
