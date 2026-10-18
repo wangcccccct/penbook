@@ -1,6 +1,6 @@
 # Penbook 0.3.0
 
-This is a prerelease for Obsidian UI testing; the automated PDF and regression checks listed below pass.
+The automated PDF and regression checks listed below pass. Obsidian UI verification remains separate.
 
 This release expands standard PDF annotation round-tripping and includes all features from 0.2.0, including embedded PDFs, editable tables, cross-notebook selection copy/cut, vector object SVG export, bookmarks, links, and page cropping.
 
